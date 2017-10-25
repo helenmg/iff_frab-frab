@@ -1,4 +1,8 @@
 %section
+  - if @open_schedule
+    .pull-right
+      =link_to "See our the upcoming schedule", public_schedule_index_path
+
   .page-header
     %h1 Welcome to the IFF Community Platform
     %h5 We’re happy to see you here! You must sign up to the platform to before you are able to take advantage of the following features:

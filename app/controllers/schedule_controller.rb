@@ -7,7 +7,6 @@ class ScheduleController < ApplicationController
     params[:day] ||= 0
     @schedules_events = []
     @day = @conference.days[params[:day].to_i]
-
     @scheduled_events = @conference.events.accepted.includes([:track, :room, :conflicts]).scheduled_on(@day).order(:title) unless @day.nil?
     @unscheduled_events = @conference.events.accepted.includes([:track, :room, :conflicts]).unscheduled.order(:title)
   end

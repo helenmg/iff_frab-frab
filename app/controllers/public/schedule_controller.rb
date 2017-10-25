@@ -25,9 +25,9 @@ class Public::ScheduleController < ApplicationController
     if @day_index < 1 || @day_index > @conference.days.count
       return redirect_to public_schedule_index_path, alert: "Failed to find day at index #{@day_index}"
     end
-
     setup_day_ivars
 
+    # binding.pry
     if @rooms.empty?
       return redirect_to public_schedule_index_path, notice: 'No events are public and scheduled.'
     end
