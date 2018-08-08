@@ -1,0 +1,26 @@
+%section
+  .page-header
+    %h1= t :edit_conference_classifiers
+  = render partial: 'tabs', locals: { active: :classifiers }
+
+  - if @conference.sub_conference? && !policy(@conference).manage?
+    .row
+      .span16
+        .blank-slate
+          %p= raw(GitHub.render(t('classifiers_module.modify_classifier_with_parent', {parent: @conference.parent.title})))
+          %p= t('classifiers_module.current_classifiers')
+
+          %uls
+            - @conference.classifiers.each do |classifier|
+              %li
+                ="#{classifier.name} (description: #{classifier.description})"
+
+  -else
+    - if @conference.classifiers.empty?
+      .row
+        .span16
+          .blank-slate
+            %p= t('classifiers_module.empty_classifiers')
+    .row
+      .span16
+        = render 'form_classifiers'

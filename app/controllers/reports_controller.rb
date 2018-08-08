@@ -1,6 +1,5 @@
-class ReportsController < ApplicationController
-  before_action :authenticate_user!
-  before_action :not_submitter!
+class ReportsController < BaseConferenceController
+  before_action :orga_only!
 
   def index
     respond_to do |format|
@@ -9,8 +8,6 @@ class ReportsController < ApplicationController
   end
 
   def show_events
-    authorize! :manage, CallForParticipation
-
     @report_type = params[:id]
     @events = []
     @search_count = 0
@@ -50,8 +47,8 @@ class ReportsController < ApplicationController
       r = conference_events.where(do_not_record: true)
     when 'events_with_tech_rider'
       r = conference_events
-          .scheduled
-          .where(Event.arel_table[:tech_rider].not_eq(''))
+        .scheduled
+        .where(Event.arel_table[:tech_rider].not_eq(''))
       @extra_fields << :tech_rider
     end
 
@@ -66,8 +63,6 @@ class ReportsController < ApplicationController
   end
 
   def show_people
-    authorize! :manage, CallForParticipation
-
     @report_type = params[:id]
     @people = []
     @search_count = 0
@@ -79,13 +74,14 @@ class ReportsController < ApplicationController
     case @report_type
     when 'expected_speakers'
       r = Person.joins(events: :conference)
-                .where('conferences.id': @conference.id)
-                .where('event_people.event_role': EventPerson::SPEAKER)
-                .where('event_people.role_state': 'confirmed')
-                .where('events.public': true)
-                .where('events.start_time > ?', Time.now)
-                .where('events.start_time < ?', Time.now.since(4.hours))
-                .where('events.state': %w(unconfirmed confirmed scheduled)).order('events.start_time ASC').group(:'people.id')
+        .where('conferences.id': @conference.id)
+        .where('event_people.event_role': EventPerson::SPEAKER)
+        .where('event_people.role_state': 'confirmed')
+        .where('events.public': true)
+        .where('events.start_time > ?', Time.now)
+        .where('events.start_time < ?', Time.now.since(4.hours))
+        .where('events.state': %w(unconfirmed confirmed scheduled))
+        .distinct
     when 'people_speaking_at'
       r = conference_people.speaking_at(@conference)
     when 'people_with_a_note'
@@ -102,13 +98,21 @@ class ReportsController < ApplicationController
       @extra_fields << :expenses
     when 'non_attending_speakers'
       r = Person.joins(events: :conference)
-                .where('conferences.id': @conference.id)
-                .where('event_people.event_role': 'speaker')
-                .where("event_people.role_state != 'attending'")
-                .where('events.public': true)
-                .where('events.start_time > ?', Time.now)
-                .where('events.start_time < ?', Time.now.since(2.hours))
-                .where('events.state': ['accepting', 'unconfirmed', 'confirmed', 'scheduled']).order('events.start_time ASC').group(:'people.id')
+        .where('conferences.id': @conference.id)
+        .where('event_people.event_role': 'speaker')
+        .where("event_people.role_state != 'attending'")
+        .where('events.public': true)
+        .where('events.start_time > ?', Time.now)
+        .where('events.start_time < ?', Time.now.since(2.hours))
+        .where('events.state': %w(accepting unconfirmed confirmed scheduled))
+        .distinct
+    when 'speakers_without_availabilities'
+      r = Person.joins(events: :conference)
+        .includes(:availabilities)
+        .where('conferences.id': @conference.id)
+        .where('event_people.event_role': EventPerson::SPEAKER)
+        .where('event_people.role_state': [ 'confirmed', 'scheduled' ])
+        .where(availabilities: { person_id: nil })
     end
 
     unless r.nil? or r.empty?
@@ -122,8 +126,6 @@ class ReportsController < ApplicationController
   end
 
   def show_statistics
-    authorize! :manage, CallForParticipation
-
     @report_type = params[:id]
     @search_count = 0
 
@@ -151,7 +153,7 @@ class ReportsController < ApplicationController
     when 'event_timeslot_sum'
       @data = []
       row = []
-      @labels = %w(LecturesCommited LecturesConfirmed LecturesUnconfirmed Lectures Workshops)
+      @labels = [t('lectures_commited'), t('lectures_confirmed'), t('lectures_unconfirmed'), t('lectures'), t('workshops')]
       events = @conference.events.where(event_type: :lecture, state: [:accepting, :confirmed, :unconfirmed, :scheduled])
       row << @conference.event_duration_sum(events)
       events = @conference.events.where(event_type: :lecture, state: [:confirmed, :scheduled])
@@ -168,7 +170,7 @@ class ReportsController < ApplicationController
     when 'people_speaking_by_day'
       @data = []
       row = []
-      @labels = %w(Day FullName PublicName Email Event Role State) # TODO translate
+      @labels = [t('day'), t('full_name'), t('public_name'), t('email'), t('event'), t('role_str'), t('state')]
 
       @conference.days.each do |day|
         @conference.events.confirmed.no_conflicts.is_public.scheduled_on(day).order(:start_time).each do |event|
@@ -189,13 +191,10 @@ class ReportsController < ApplicationController
   end
 
   def show_transport_needs
-    authorize! :manage, CallForParticipation
-
     @search = @conference.transport_needs.search(params[:q])
     @transport_needs = @search.result
     @report_type = params[:id]
 
     render :show
   end
-
 end

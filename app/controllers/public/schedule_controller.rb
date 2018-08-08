@@ -1,6 +1,7 @@
 class Public::ScheduleController < ApplicationController
   layout 'public_schedule'
   before_action :maybe_authenticate_user!
+  after_action :cors_set_access_control_headers
 
   def index
     @days = @conference.days
@@ -21,31 +22,28 @@ class Public::ScheduleController < ApplicationController
   end
 
   def day
-    @day_index = params[:day].to_i
-    if @day_index < 1 || @day_index > @conference.days.count
-      return redirect_to public_schedule_index_path, alert: "Failed to find day at index #{@day_index}"
+    unless @day = find_day(params[:day].to_i)
+      return redirect_to public_schedule_index_path, alert: t('schedule_module.error_day_not_found')
     end
 
-    setup_day_ivars
-
-    if @rooms.empty?
-      return redirect_to public_schedule_index_path, notice: 'No events are public and scheduled.'
+    if @day.rooms_with_events.empty?
+      return redirect_to public_schedule_index_path, notice: t('schedule_module.error_event_not_public')
     end
+
+    @view_model = ScheduleViewModel.new(@conference).for_day(@day)
 
     respond_to do |format|
       format.html
       format.pdf do
         @layout = CustomPDF::FullPageLayout.new('A4')
+        @rooms_per_page = 5
         render template: 'schedule/custom_pdf'
       end
     end
   end
 
   def events
-    @events = @conference.events_including_subs.is_public.confirmed.scheduled.sort { |a, b|
-      a.to_sortable <=> b.to_sortable
-    }
-    @events_by_track = @events.group_by(&:track_id)
+    @view_model = ScheduleViewModel.new(@conference)
     respond_to do |format|
       format.html
       format.json
@@ -53,9 +51,22 @@ class Public::ScheduleController < ApplicationController
     end
   end
 
+  def timeline
+    @view_model = ScheduleViewModel.new(@conference)
+    respond_to do |format|
+      format.html
+    end
+  end
+
+  def booklet
+    @view_model = ScheduleViewModel.new(@conference)
+    respond_to do |format|
+      format.html
+    end
+  end
+
   def event
-    @event = @conference.events_including_subs.is_public.confirmed.scheduled.find(params[:id])
-    @concurrent_events = @conference.events_including_subs.is_public.confirmed.scheduled.where(start_time: @event.start_time)
+    @view_model = ScheduleViewModel.new(@conference).for_event(params[:id])
     respond_to do |format|
       format.html
       format.ics
@@ -63,7 +74,7 @@ class Public::ScheduleController < ApplicationController
   end
 
   def speakers
-    @speakers = Person.publicly_speaking_at(@conference.include_subs).confirmed(@conference.include_subs).order(:public_name, :first_name, :last_name)
+    @view_model = ScheduleViewModel.new(@conference)
     respond_to do |format|
       format.html
       format.json
@@ -72,7 +83,7 @@ class Public::ScheduleController < ApplicationController
   end
 
   def speaker
-    @speaker = Person.publicly_speaking_at(@conference.include_subs).confirmed(@conference.include_subs).find(params[:id])
+    @view_model = ScheduleViewModel.new(@conference).for_speaker(params[:id])
   end
 
   def qrcode
@@ -81,22 +92,21 @@ class Public::ScheduleController < ApplicationController
 
   private
 
-  def maybe_authenticate_user!
-    authenticate_user! unless @conference.schedule_public
+  def find_day(day_index)
+    return @conference.days.first if day_index < 1
+    return @conference.days.last if day_index > @conference.days.count
+    @conference.days[day_index - 1]
   end
 
-  def setup_day_ivars
-    @day = @conference.days[@day_index - 1]
-    all_rooms = @conference.rooms_including_subs
-    @rooms = []
-    @events = {}
-    @skip_row = {}
-    all_rooms.each do |room|
-      events = room.events.confirmed.no_conflicts.is_public.scheduled_on(@day).order(:start_time).to_a
-      next if events.empty?
-      @events[room] = events
-      @skip_row[room] = 0
-      @rooms << room
-    end
+  def maybe_authenticate_user!
+    return if @conference.schedule_public
+    authenticate_user!
+    manage_only!
+  end
+
+  private
+
+  def cors_set_access_control_headers
+    headers['Access-Control-Allow-Origin'] = '*'
   end
 end

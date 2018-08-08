@@ -1,6 +1,6 @@
 ## Development Setup
 
-Basically, to get started you need git, ruby (>= 2.3) and bundler
+Basically, to get started you need git, ruby (>= 2.4) and bundler
 and follow these steps:
 
 1) Install nodejs:
@@ -53,6 +53,10 @@ More information can be found in these github projects:
 * [frab/vagrant-frab](https://github.com/frab/vagrant-frab)
 * [frab/chef-frab](https://github.com/frab/chef-frab)
 
+
+## Docker
+
+See [Docker Readme](README.docker.md)
 
 ## Production Deployment
 

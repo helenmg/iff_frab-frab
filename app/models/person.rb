@@ -1,10 +1,11 @@
-class Person < ActiveRecord::Base
+class Person < ApplicationRecord
   GENDERS = %w(male female other).freeze
+  DEFAULT_AVATAR_SIZE = '32'.freeze
 
   has_many :availabilities, dependent: :destroy
   has_many :event_people, dependent: :destroy
   has_many :event_ratings, dependent: :destroy
-  has_many :events, -> { uniq }, through: :event_people
+  has_many :events, -> { distinct }, through: :event_people
   has_many :im_accounts, dependent: :destroy
   has_many :languages, as: :attachable, dependent: :destroy
   has_many :links, as: :linkable, dependent: :destroy
@@ -21,7 +22,7 @@ class Person < ActiveRecord::Base
   accepts_nested_attributes_for :expenses, reject_if: :all_blank, allow_destroy: true
   accepts_nested_attributes_for :ticket, reject_if: :all_blank, allow_destroy: true
 
-  belongs_to :user, dependent: :destroy
+  belongs_to :user, dependent: :destroy, optional: true
 
   before_save :nilify_empty
 
@@ -29,22 +30,28 @@ class Person < ActiveRecord::Base
 
   has_attached_file :avatar,
     styles: { tiny: '16x16>', small: '32x32>', large: '128x128>' },
-    default_url: 'person_:style.png'
+    default_url: ':default_avatar_url',
+    escape_url: false
+
+  Paperclip.interpolates :default_avatar_url do |avatar, style|
+    style = :small if style.blank? || style.eql?(:original)
+    avatar.instance.default_avatar_url(style)
+  end
 
   validates_attachment_content_type :avatar, content_type: [/jpg/, /jpeg/, /png/, /gif/]
 
-  validates_presence_of :public_name, :email
+  validates :public_name, :email, presence: true
 
   # validates_inclusion_of :gender, in: GENDERS, allow_nil: true
 
   scope :involved_in, ->(conference) {
-    joins(events: :conference).where('conferences.id': conference).uniq
+    joins(events: :conference).where('conferences.id': conference).distinct
   }
   scope :speaking_at, ->(conference) {
-    joins(events: :conference).where('conferences.id': conference).where('event_people.event_role': EventPerson::SPEAKER).where('events.state': Event::ACCEPTED).uniq
+    joins(events: :conference).where('conferences.id': conference).where('event_people.event_role': EventPerson::SPEAKER).where('events.state': Event::ACCEPTED).distinct
   }
   scope :publicly_speaking_at, ->(conference) {
-    joins(events: :conference).where('conferences.id': conference).where('event_people.event_role': EventPerson::SPEAKER).where('events.public': true).where('events.state': Event::ACCEPTED).uniq
+    joins(events: :conference).where('conferences.id': conference).where('event_people.event_role': EventPerson::SPEAKER).where('events.public': true).where('events.state': Event::ACCEPTED).distinct
   }
   scope :confirmed, ->(conference) {
     joins(events: :conference).where('conferences.id': conference).where('events.state': %w(confirmed scheduled))
@@ -82,18 +89,26 @@ class Person < ActiveRecord::Base
 
   def involved_in?(conference)
     found = Person.joins(events: :conference)
-                  .where('conferences.id': conference.id)
-                  .where(id: id)
-                  .count
+      .where('conferences.id': conference.id)
+      .where(id: id)
+      .count
     found.positive?
+  end
+
+  def submitter_of?(conferences)
+    Person.joins(events: :conference)
+      .where('conferences.id': conferences)
+      .where('event_people.event_role': EventPerson::SPEAKER)
+      .where(id: id)
+      .any?
   end
 
   def active_in_any_conference?
     found = Conference.joins(events: [{ event_people: :person }])
-                      .where(Event.arel_table[:state].in(Event::ACCEPTED))
-                      .where(EventPerson.arel_table[:event_role].in(EventPerson::SPEAKER))
-                      .where(Person.arel_table[:id].eq(id))
-                      .count
+      .where(Event.arel_table[:state].in(Event::ACCEPTED))
+      .where(EventPerson.arel_table[:event_role].in(EventPerson::SPEAKER))
+      .where(Person.arel_table[:id].eq(id))
+      .count
     found.positive?
   end
 
@@ -114,7 +129,7 @@ class Person < ActiveRecord::Base
   end
 
   def role_state(conference)
-    event_people.presenter_at(conference).map(&:role_state).uniq.join ', '
+    event_people.presenter_at(conference).map(&:role_state).compact.uniq.sort.join ', '
   end
 
   def set_role_state(conference, state)
@@ -131,6 +146,13 @@ class Person < ActiveRecord::Base
       a.end_date = a.end_date.in_time_zone
     }
     availabilities
+  end
+
+  def create_availabilities_for(conference)
+    Availability.build_for(conference).each do |a|
+      a.person = self
+      a.save
+    end
   end
 
   def update_attributes_from_slider_form(params)
@@ -185,9 +207,23 @@ class Person < ActiveRecord::Base
     MergePersons.new(keep_last_updated).combine!(self, doppelgaenger)
   end
 
+  def default_avatar_url(style = :small)
+    return "person_#{style}.png" unless use_gravatar
+    gravatar_url(gravatar_width(style))
+  end
+
   private
+
+  # size is of the format '32x32>' string
+  def gravatar_width(style)
+    avatar.styles[style][:geometry].split('x').first
+  end
 
   def nilify_empty
     self.gender = nil if gender and gender.empty?
+  end
+
+  def gravatar_url(width = DEFAULT_AVATAR_SIZE)
+    "https://www.gravatar.com/avatar/#{Digest::MD5.hexdigest(email)}?size=#{width}&dd=mm"
   end
 end

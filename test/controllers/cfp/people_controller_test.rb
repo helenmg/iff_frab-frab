@@ -9,38 +9,40 @@ class Cfp::PeopleControllerTest < ActionController::TestCase
   end
 
   def cfp_person_params
-    @cfp_person.attributes.except(*%w(id avatar_file_name avatar_content_type avatar_file_size avatar_updated_at created_at updated_at user_id note))
+    @cfp_person.attributes.except('id', 'avatar_file_name', 'avatar_content_type', 'avatar_file_size', 'avatar_updated_at', 'created_at', 'updated_at', 'user_id', 'note')
   end
 
-  test 'should get new' do
-    get :new, conference_acronym: @conference.acronym
+  test 'should get show' do
+    get :show, params: { conference_acronym: @conference.acronym }
     assert_response :success
-  end
 
-  test 'should create cfp_person' do
-    # can't have two persons on one user, so delete the one from login_as
-    user = create(
-      :user,
-      role: 'submitter'
-    )
-    user.person = nil
-    session[:user_id] = user.id
-
-    assert_difference 'Person.count' do
-      post :create, person: { email: @cfp_person.email,
-                              public_name: @cfp_person.public_name },
-                    conference_acronym: @conference.acronym
+    assert_raises ActionController::UnknownFormat do
+      get :show, format: :xml, params: { conference_acronym: @conference.acronym }
     end
-    assert_response :redirect
   end
 
   test 'should get edit' do
-    get :edit, conference_acronym: @conference.acronym
+    get :edit, params: { conference_acronym: @conference.acronym }
     assert_response :success
   end
 
   test 'should update cfp_person' do
-    put :update, id: @cfp_person.id, person: cfp_person_params, conference_acronym: @conference.acronym
+    put :update, params: { id: @cfp_person.id, person: cfp_person_params, conference_acronym: @conference.acronym }
+    assert_response :redirect
+  end
+
+  test 'should show person' do
+    get :show, params: { conference_acronym: @conference.acronym }
+    assert_response :success
+  end
+
+  test 'should export person' do
+    get :export, params: { conference_acronym: @conference.acronym }
+    assert_response :success
+  end
+
+  test 'should import person' do
+    post :import, params: { conference_acronym: @conference.acronym, foaf: { first_name: 'fake-name' }.to_json }
     assert_response :redirect
   end
 end

@@ -1,18 +1,28 @@
-Frab::Application.routes.draw do
+Rails.application.routes.draw do
+  devise_for :users, controllers: {
+    registrations: 'auth/registrations',
+    sessions: 'auth/sessions'
+  }
+
   scope '(:locale)' do
-    resource :session
 
     get '/conferences/new' => 'conferences#new', as: 'new_conference'
     post '/conferences' => 'conferences#create', as: 'create_conference'
     get '/conferences' => 'conferences#index', as: 'conference_index'
     delete '/conferences' => 'conferences#destroy'
 
-    resources :people do
-      resource :user
-      member do
-        put :attend
-      end
-    end
+    get '/conferences/past' => 'home#past', as: 'past_conferences'
+
+    get '/conference_users' => 'conference_users#index', as: 'conference_users'
+    get '/admin_users' => 'conference_users#admins', as: 'admin_users'
+    delete '/conference_users' => 'conference_users#destroy'
+
+    get '/profile' => 'crew_profiles#edit', as: 'edit_crew_profile'
+    patch '/profile' => 'crew_profiles#update', as: 'update_crew_profile'
+
+    get '/user/:person_id/edit' => 'users#edit', as: 'edit_crew_user'
+    patch '/user/:person_id' => 'users#update', as: 'crew_user'
+    post '/user/:person_id' => 'users#create'
 
     scope path: '/:conference_acronym' do
       namespace :public do
@@ -20,45 +30,43 @@ Frab::Application.routes.draw do
         get '/schedule/style' => 'schedule#style', as: 'schedule_style'
         get '/schedule/:day' => 'schedule#day', as: 'schedule'
         get '/events' => 'schedule#events', as: 'events'
+        get '/timeline' => 'schedule#timeline', as: 'timeline'
+        get '/booklet' => 'schedule#booklet', as: 'booklet'
         get '/events/:id' => 'schedule#event', as: 'event'
         get '/speakers' => 'schedule#speakers', as: 'speakers'
         get '/speakers/:id' => 'schedule#speaker', as: 'speaker'
         get '/qrcode' => 'schedule#qrcode', as: 'qrcode'
-
         resources :events do
           resource :feedback, controller: :feedback
         end
       end # namespace :public
 
       namespace :cfp do
-        resource :session
-
-        resource :user do
-          resource :password
-          resource :confirmation
-        end
-
+        resource :user, except: %i(new create)
         resource :person do
+          member do
+            get :export
+            post :import
+          end
           resource :availability
         end
-
-        get '/events/:id/confirm/:token' => 'events#confirm', as: 'event_confirm_by_token'
-
+        match '/events/:id/confirm/:token' => 'events#confirm', as: 'event_confirm_by_token', via: [:get, :post]
+        get '/events/join(/:token)' => 'events#join', as: :events_join
+        post '/events/join/:token' => 'events#join'
+        get '/schedule' => 'schedule#index', as: 'schedule'
+        get '/schedule/update_track' => 'schedule#update_track', as: 'schedule_update_track'
+        put '/schedule/update_event' => 'schedule#update_event', as: 'schedule_update_event'
         resources :events do
           member do
+            put :accept
             put :withdraw
             put :confirm
           end
         end
-
-        get '/open_soon' => 'welcome#open_soon', as: 'open_soon'
-        get '/not_existing' => 'welcome#not_existing', as: 'not_existing'
-
-        root to: 'people#show'
+        root to: 'welcome#show'
       end # namespace :cfp
 
       get '/recent_changes' => 'recent_changes#index', as: 'recent_changes'
-
       post '/schedule.pdf' => 'schedule#custom_pdf', as: 'schedule_custom_pdf', defaults: { format: :pdf }
       get '/schedule' => 'schedule#index', as: 'schedule'
       get '/schedule/update_track' => 'schedule#update_track', as: 'schedule_update_track'
@@ -77,6 +85,7 @@ Frab::Application.routes.draw do
         get :edit_days
         get :edit_schedule
         get :edit_rooms
+        get :edit_classifiers
         get :edit_ticket_server
         get :edit_notifications
         post :send_notification
@@ -94,6 +103,9 @@ Frab::Application.routes.draw do
           get :all
           get :feedbacks
           get :speakers
+        end
+        member do
+          put :attend
         end
       end
 
@@ -122,13 +134,10 @@ Frab::Application.routes.draw do
       get '/reports/on_people/:id' => 'reports#show_people', as: 'report_on_people'
       get '/reports/on_events/:id' => 'reports#show_events', as: 'report_on_events'
       get '/reports/on_statistics/:id' => 'reports#show_statistics', as: 'report_on_statistics'
-      get "/reports/on_transport_needs/:id" => "reports#show_transport_needs", as: "report_on_transport_needs"
+      get '/reports/on_transport_needs/:id' => 'reports#show_transport_needs', as: 'report_on_transport_needs'
 
-      resources :tickets do
-        member do
-          post :create
-        end
-      end
+      post '/tickets/:id/person' => 'tickets#create_person', as: 'create_person_ticket'
+      post '/tickets/:id/event' => 'tickets#create_event', as: 'create_event_ticket'
 
       resources :mail_templates do
         member do
@@ -136,8 +145,7 @@ Frab::Application.routes.draw do
         end
       end
     end # scope path: "/:conference_acronym"
-
-    get '/:conference_acronym' => 'home#index', as: 'conference_home'
+    get '/:conference_acronym' => 'conferences#show', as: 'conference_crew'
   end # scope "(:locale)" do
 
   root to: 'home#index'

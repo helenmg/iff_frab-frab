@@ -1,7 +1,5 @@
-class MailTemplatesController < ApplicationController
-  before_filter :authenticate_user!
-  before_filter :not_submitter!
-  before_filter :find_conference
+class MailTemplatesController < BaseConferenceController
+  before_action :orga_only!
 
   def new
     @mail_template = MailTemplate.new
@@ -14,8 +12,9 @@ class MailTemplatesController < ApplicationController
   def show
     @mail_template = @conference.mail_templates.find(params[:id])
     @send_filter_options = [
-      ['All speakers involved in all confirmed events',   :all_speakers_in_confirmed_events],
-      ['All speakers involved in all unconfirmed events', :all_speakers_in_unconfirmed_events]
+      [t('emails_module.filters.all_speakers_in_confirmed_events'),   :all_speakers_in_confirmed_events],
+      [t('emails_module.filters.all_speakers_in_unconfirmed_events'), :all_speakers_in_unconfirmed_events],
+      [t('emails_module.filters.all_speakers_in_scheduled_event'),    :all_speakers_in_scheduled_events]
     ]
   end
 
@@ -25,16 +24,16 @@ class MailTemplatesController < ApplicationController
 
     if Rails.env.production?
       @mail_template.send_async(send_filter)
-      redirect_to(@mail_template, notice: 'Mail deliveries queued.')
+      redirect_to(@mail_template, notice: t('emails_module.notice_mails_queued'))
     else
       @mail_template.send_sync(send_filter)
-      redirect_to(@mail_template, notice: 'Mails delivered.')
+      redirect_to(@mail_template, notice: t('emails_module.notice_mails_delivered'))
     end
   end
 
   def index
     result = search @conference.mail_templates, params
-    @mail_templates = result.paginate page: params[:page]
+    @mail_templates = result.paginate page: page_param
   end
 
   def update
@@ -42,10 +41,11 @@ class MailTemplatesController < ApplicationController
 
     respond_to do |format|
       if @mail_template.update_attributes(mail_template_params)
-        format.html { redirect_to(@mail_template, notice: 'Mail template was successfully updated.') }
+        format.html { redirect_to(@mail_template, notice: t('emails_module.notice_template_updated')) }
         format.xml  { head :ok }
         format.js   { head :ok }
       else
+        flash_model_errors(@mail_template)
         format.html { render action: 'edit' }
         format.xml  { render xml: @mail_template.errors, status: :unprocessable_entity }
       end
@@ -55,19 +55,15 @@ class MailTemplatesController < ApplicationController
   def create
     t = MailTemplate.new(mail_template_params)
     @conference.mail_templates << t
-    redirect_to(mail_templates_path, notice: 'Transport need was successfully added.')
+    redirect_to(mail_templates_path, notice: t('emails_module.notice_transport_need_added'))
   end
 
   def destroy
     @conference.mail_templates.find(params[:id]).destroy
-    redirect_to(mail_templates_path, notice: 'Mail template was successfully destroyed.')
+    redirect_to(mail_templates_path, notice: t('emails_module.notice_template_destroyed'))
   end
 
   private
-
-  def find_conference
-    authorize! :administrate, @conference
-  end
 
   def search(mail_templates, params)
     if params.key?(:term) and not params[:term].empty?

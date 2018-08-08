@@ -22,7 +22,7 @@ class EventPersonTest < ActiveSupport::TestCase
     conference = create(:three_day_conference)
     event = create(:event, conference: conference)
     person = create(:person)
-    availability = create(:availability, conference: conference, person: person, start_date: Time.parse('10:00'), end_date: Time.parse('14:00'))
+    create(:availability, conference: conference, person: person, start_date: Time.parse('10:00'), end_date: Time.parse('14:00'))
     event_person = create(:event_person, event: event, person: person)
     assert event_person.available_between?(today.to_time.change(hour: 11), today.to_time.change(hour: 13))
     assert event_person.available_between?(today.to_time.change(hour: 10), today.to_time.change(hour: 14))
@@ -36,8 +36,8 @@ class EventPersonTest < ActiveSupport::TestCase
     event = create(:event, conference: conference, state: 'confirmed')
     person1 = create(:person)
     person2 = create(:person)
-    event_person1 = create(:confirmed_event_person, event: event, person: person1)
-    event_person2 = create(:confirmed_event_person, event: event, person: person2)
+    create(:confirmed_event_person, event: event, person: person1)
+    create(:confirmed_event_person, event: event, person: person2)
     persons = Person.involved_in(conference)
     assert_equal 2, persons.count
     assert_includes persons, person1
@@ -74,7 +74,7 @@ class EventPersonTest < ActiveSupport::TestCase
       event_person.substitute_notification_variables 'unknownstate', :body
     end
 
-    string = event_person.substitute_notification_variables 'accept', :subject
+    event_person.substitute_notification_variables 'accept', :subject
     event_person.set_default_notification 'accept'
 
     assert_not_equal event_person.substitute_notification_variables('accept', :subject), conference.rooms.first.name
@@ -82,7 +82,5 @@ class EventPersonTest < ActiveSupport::TestCase
     assert_equal event_person.substitute_notification_variables('accept', :subject), conference.rooms.first.name
 
     assert_nil event_person.notification_subject
-
   end
-
 end

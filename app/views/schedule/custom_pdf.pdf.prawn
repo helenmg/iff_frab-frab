@@ -27,7 +27,7 @@ def header_content_right
 end
 
 prawn_document(
-  page_layout: landscape? ? :landscape : :portrait,
+  page_layout: @orientation,
   page_size: @layout.page_size
 ) do |pdf|
   pdf.font_families.update('BitStream Vera' => {
@@ -39,10 +39,11 @@ prawn_document(
 
   @layout.bounds = pdf.bounds
 
-  number_of_columns = @rooms.size < 5 ? @rooms.size : 5
-  number_of_pages = (@rooms.size / number_of_columns.to_f).ceil.to_i
+  number_of_columns = [ @view_model.rooms.size, @rooms_per_page ].min
+  number_of_pages = (@view_model.rooms.size / number_of_columns.to_f).ceil.to_i
   column_width = @layout.page_width / number_of_columns
   timeslot_height = @layout.timeslot_height(number_of_timeslots)
+
 
   # A page contains the full time range. New pages will
   # contain further rooms.
@@ -53,7 +54,7 @@ prawn_document(
     pdf.draw_text header_content_center, size: 16, at: @layout.header_center_anchor
     pdf.draw_text header_content_right, size: 9, at: @layout.header_right_anchor
 
-    rooms = @rooms[offset..(offset + number_of_columns - 1)]
+    rooms = @view_model.rooms[offset..(offset + number_of_columns - 1)]
     table_data = room_table_data(rooms)
 
     table = pdf.make_table(table_data) do |t|
@@ -74,14 +75,14 @@ prawn_document(
     offset = pdf.bounds.height - table.height
 
     # draw start time column
-    events = @events[rooms[0]]
+    events = @view_model.events_by_room(rooms[0])
     events.each do |event|
       y = (timeslots_between(event.start_time, @day.end_date) - 1) * timeslot_height
       y += offset
       coord = [0, y]
       pdf.bounding_box(coord,
                        width: @layout.margin_width - 1,
-                       height: event.time_slots * timeslot_height - 1) do
+                       height: (event.time_slots == 0 ? timeslot_height : event.time_slots * timeslot_height - 1)) do
         pdf.rounded_rectangle(pdf.bounds.top_left, pdf.bounds.width, pdf.bounds.height, 3)
         pdf.fill_color = 'ffffff'
         pdf.fill_and_stroke
@@ -92,12 +93,12 @@ prawn_document(
 
     # draw events
     rooms.size.times do |i|
-      events = @events[rooms[i]]
+      events = @view_model.events_by_room(rooms[i])
       events.each do |event|
         coord = event_coordinates(i, event, column_width, timeslot_height, offset)
         pdf.bounding_box(coord,
                          width: column_width - 1,
-                         height: event.time_slots * timeslot_height - 1) do
+                         height: (event.time_slots == 0 ? timeslot_height : event.time_slots * timeslot_height - 1)) do
           pdf.rounded_rectangle pdf.bounds.top_left, pdf.bounds.width, pdf.bounds.height, 3
           pdf.fill_color = 'ffffff'
           pdf.fill_and_stroke

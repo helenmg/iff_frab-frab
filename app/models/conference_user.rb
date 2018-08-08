@@ -1,20 +1,23 @@
-class ConferenceUser < ActiveRecord::Base
-  ROLES = %w(reviewer coordinator orga)
+class ConferenceUser < ApplicationRecord
+  ROLES = %w(reviewer coordinator orga).freeze
 
   belongs_to :conference
   belongs_to :user
+  has_one :person, through: :user
 
   validates :conference, :user, :role, presence: true
   validate :user_role_is_crew
   validate :role_is_valid
 
+  self.per_page = 20
+
   private
 
   def role_is_valid
-    self.errors.add(:role, 'You need to select a valid role') unless ROLES.include? self.role
+    errors.add(:role, 'You need to select a valid role') unless ROLES.include? role
   end
 
   def user_role_is_crew
-    self.errors.add(:role, 'User role is not crew') unless self.user and self.user.is_crew?
+    errors.add(:role, 'User role is not crew') unless user and user.is_crew?
   end
 end

@@ -3,23 +3,23 @@
     %tr
       %th.first
       - if @search
-        %th= sort_link @search, :title, 'Title', term: params[:term]
+        %th= sort_link @search, :title, t('title'), term: params[:term]
         - if @conference.ticket_server_enabled?
-          %th= sort_link @search, :ticket_id, 'Ticket', term: params[:term]
-        %th= sort_link @search, :track_name, 'Track', term: params[:term]
-        %th= sort_link @search, :event_type, 'Type', term: params[:term]
-        - if can? :crud, Event
-          %th= sort_link @search, :state, 'State', term: params[:term]
+          %th= sort_link @search, :ticket_id, t('ticket'), term: params[:term]
+        %th= sort_link @search, :track_name, t('track'), term: params[:term]
+        %th= sort_link @search, :event_type, t('type'), term: params[:term]
+        - if policy(@conference).manage?
+          %th= sort_link @search, :state, t('state'), term: params[:term]
         %th= sort_link @search, :created_at, term: params[:term]
       - else
-        %th Title
+        %th= t('title')
         - if @conference.ticket_server_enabled?
-          %th Ticket
-        %th Track
-        %th Event type
-        - if can? :crud, Event
-          %th State
-        %th Created at
+          %th= t('ticket')
+        %th= t('track')
+        %th= t('type')
+        - if policy(@conference).manage?
+          %th= t('state')
+        %th= t('created_at')
       %th.last
   %tbody
     - collection.each do |event|
@@ -38,13 +38,13 @@
                 = event.ticket.remote_ticket_id
               -else
                 = link_to event.ticket.remote_ticket_id, get_ticket_view_url( event.ticket.remote_ticket_id ), target: "_blank"
-        %td= link_to_unless (params[:track_name].present? or event.track.nil?), event.track.try(:name), url_for(params.merge({:track_name => event.track.try(:name)}))
-        %td= link_to_unless params[:event_type].present?, event.event_type, url_for(params.merge({:event_type => event.event_type}))
-        - if can? :crud, Event
-          %td= link_to_unless params[:event_state].present?, event.state, url_for(params.merge({:event_state => event.state}))
+        %td= link_to_unless (params[:track_name].present? or event.track.nil?), event.track.try(:name), request.query_parameters.merge(:track_name => event.track.try(:name))
+        %td= link_to_unless params[:event_type].present?, event.event_type, request.query_parameters.merge(:event_type => event.event_type)
+        - if policy(@conference).manage?
+          %td= link_to_unless params[:event_state].present?, event.state, request.query_parameters.merge(:event_state => event.state)
         %td= l(event.created_at.to_date)
         %td.buttons
-          = action_button "small", 'Show', event
-          - if can? :crud, event
-            = action_button "small", 'Edit', edit_event_path(event)
-            = action_button "small danger", 'Destroy', event, confirm: 'Are you sure?', method: :delete
+          = action_button "small", t('show'), event
+          - if policy(@conference).manage?
+            = action_button "small", t('edit'), edit_event_path(event)
+            = action_button "small danger", t('destroy'), event, data: { confirm: t('are_you_sure')}, method: :delete

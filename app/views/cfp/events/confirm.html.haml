@@ -1,8 +1,7 @@
 %section
   .page-header
-    %h1=t("cfp.event_confirmed")
-  .row
-    .span16
-      = render "shared/flash", flash: flash
-      %p
-        = t("cfp.thanks_for_confirmation")
+    %h1= t('titles.cpf_event_confirm')
+    = form_tag request.url do
+      %p= raw GitHub::Markdown.render(t('confirmation_request', {event: @event.title}))
+      = submit_tag t('cfp.pages.event_confirm_attendence'), class: 'btn btn-large btn-primary'
+

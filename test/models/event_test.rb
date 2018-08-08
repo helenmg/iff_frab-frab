@@ -5,6 +5,7 @@ class EventTest < ActiveSupport::TestCase
   should have_many :conflicts_as_conflicting
   should have_many :conflicts
   should have_many :event_attachments
+  should have_many :event_classifiers
   should have_many :event_feedbacks
   should have_many :event_people
   should have_many :event_ratings
@@ -109,6 +110,22 @@ class EventTest < ActiveSupport::TestCase
     end
   end
 
+  test 'event conflicts are created if one person is speaker is already speaking' do
+    conference = create(:three_day_conference_with_events)
+    first_event = conference.events.first
+    new_room = create(:room, conference: conference)
+    new_event = create(:event, conference: conference, room: new_room, state: 'confirmed', start_time: first_event.start_time)
+    assert_empty first_event.conflicts
+    assert conference.events.include?(new_event)
+
+    event_person1 = create(:confirmed_speaker, conference: conference, event: first_event)
+    create(:confirmed_speaker, conference: conference, event: new_event, person: event_person1.person)
+
+    refute_empty first_event.reload.conflicts
+    refute_empty new_event.reload.conflicts
+    refute_empty Conflict.all
+  end
+
   test 'possible start times for event' do
     %i(three_day_conference_with_events sub_conference_with_events).each do |conference_type|
       conference = create(conference_type)
@@ -127,7 +144,7 @@ class EventTest < ActiveSupport::TestCase
              start_date: day.start_date + 1.hour,
              end_date: day.start_date + 3.hours)
 
-      possible = event.possible_start_times
+      possible = PossibleStartTimes.new(event).all
       possible_days = possible.keys
       assert possible_days.count == 1
 
@@ -187,4 +204,19 @@ class EventTest < ActiveSupport::TestCase
     conference.ticket_type = 'integrated'
     assert event.notifiable
   end
+
+  test 'create with nested attributes is valid' do
+    event = build(:event)
+
+    link_plan = { 'title' => 'title value', 'url' => 'http://test.com' }
+    event.links_attributes = { 'random-string' => link_plan }
+
+    upload = Rack::Test::UploadedFile.new(Rails.root.join('test', 'fixtures', 'textfile.txt'), 'text/plain')
+    event_attachment_plan = { 'title' => 'title value', 'attachment' => upload }
+    event.event_attachments_attributes = { 'random-string' => event_attachment_plan }
+
+    event.valid? # trigger validations
+    assert_empty event.errors.full_messages
+  end
+
 end

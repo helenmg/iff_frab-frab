@@ -1,5 +1,5 @@
-class Language < ActiveRecord::Base
-  belongs_to :attachable, polymorphic: true
+class Language < ApplicationRecord
+  belongs_to :attachable, polymorphic: true, optional: true
 
-  validates_presence_of :code
+  validates :code, presence: true
 end

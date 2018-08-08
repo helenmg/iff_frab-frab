@@ -6,6 +6,7 @@ and to create a schedule.
 
 [![Build Status](https://travis-ci.org/frab/frab.svg?branch=master)](https://travis-ci.org/frab/frab)
 [![Code Climate](https://codeclimate.com/github/frab/frab.png)](https://codeclimate.com/github/frab/frab)
+[![Docker Build Status](https://img.shields.io/docker/build/frab/frab.svg)](https://hub.docker.com/r/frab/frab/)
 
 ## Background
 
@@ -29,11 +30,11 @@ than 5 parallel tracks (plus devrooms) over 2 days.
 
 The [frab wiki](https://github.com/frab/frab/wiki) hosts a list of conferences using frab.
 Take a look at the [screenshots](https://github.com/frab/frab/wiki/Screenshots) to get an idea
-of what frab does.
+of what frab does. The [manual](https://github.com/frab/frab/wiki/Manual) can be found in the wiki.
 
 ## Installing
 
-frab is a pretty standard Ruby on Rails (version 4.2) application.
+frab is a pretty standard Ruby on Rails (version 5.0) application.
 There should be plenty of tutorials online on how to install,
 deploy and setup these.
 

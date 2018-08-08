@@ -1,6 +1,166 @@
-%p{ id: "notice" }
-  =notice
+%section
+  .page-header
+    %h1= t('cfp.welcome')
+  .row
+    .span16
+      - if @conference.rooms.count == 0
+        .blank-slate
+          = raw(GitHub::Markdown.render(t('conferences_module.show_welcome')))
 
-= link_to 'Edit', edit_conference_path(@conference)
-|
-= link_to 'Back', conferences_path
+      - if @conference.events.count == 0 and @conference.call_for_participation.nil?
+        .blank-slate
+          = raw(GitHub::Markdown.render(t('conferences_module.show_no_event')))
+  - if policy(@conference).orga?
+    .row
+      .span16
+        - if @conference.in_the_past?
+          %p= t('conferences_module.conference_in_past')
+
+    .row
+      .span16
+        %h2
+          = t('conferences_module.recent_changes')
+          %small= link_to t('navigation.more'), recent_changes_path
+        - if @versions.empty?
+          .blank-slate
+            %p= raw(GitHub::Markdown.render(t('conferences_module.recent_changes_text')))
+        - else
+          = render "recent_changes/table"
+          %p
+  .row
+    .span16
+      %h2= t('conferences_module.statistics')
+      - if @conference.events.count == 0
+        .blank-slate
+          %p= t('conferences_module.statistics_empty')
+      - else
+        %h4= t('events_module.events_by_state')
+        %p
+          = link_to t('all'), "#", id: "events_all_types"
+          |
+          = link_to t('lectures_only'), "#", id: "events_lectures_only"
+          |
+          = link_to t('workshops_only'), "#", id: "events_workshops_only"
+          |
+          = link_to t('others_only'), "#", id: "events_others_only"
+        #event_state_graph(style="width:600px;height:300px;")
+        %table.zebra-stripe
+          %thead
+            %tr
+              %th= t('conferences_module.new')
+              %th= t('conferences_module.review')
+              %th= t('conferences_module.withdrawn')
+              %th= t('conferences_module.accepting')
+              %th= t('conferences_module.unconfirmed')
+              %th= t('conferences_module.confirmed')
+              %th= t('conferences_module.scheduled')
+              %th= t('conferences_module.canceled')
+              %th= t('conferences_module.rejecting')
+              %th= t('conferences_module.rejected')
+              %th= t('conferences_module.total')
+          %tbody
+            %tr
+              %td= @conference.events.where(state: :new).count
+              %td= @conference.events.where(state: :review).count
+              %td= @conference.events.where(state: :withdrawn).count
+              %td= @conference.events.where(state: :accepting).count
+              %td= @conference.events.where(state: :unconfirmed).count
+              %td= @conference.events.where(state: :confirmed).count
+              %td= @conference.events.where(state: :scheduled).count
+              %td= @conference.events.where(state: :canceled).count
+              %td= @conference.events.where(state: :rejecting).count
+              %td= @conference.events.where(state: :rejected).count
+              %td= @conference.events.count
+      - if @conference.languages.count > 1
+        %h4= t('events_module.events_by_language')
+        %p
+          = link_to t('all'), "#", id: "languages_all_events"
+          |
+          = link_to t('accepted_only'), "#", id: "languages_accepted_events_only"
+        #event_language_graph(style="width:400px;height:300px;")
+
+      - if @conference.gender_breakdown.count > 1
+        %h4= t('events_module.events_by_gender')
+        %p
+          = link_to t('all'), "#", id: "gender_all_events"
+          |
+          = link_to t('accepted_only'), "#", id: "gender_accepted_events_only"
+        #event_gender_graph(style="width:400px;height:300px;")
+
+:coffeescript
+  update_languages_breakdown = (accepted_only = false) ->
+    if accepted_only
+      params = {"accepted_only": 1}
+    else
+      params = {}
+    $.ajax(
+      url: "#{language_breakdown_statistics_path}",
+      type: "GET",
+      dataType: "json",
+      data: params,
+      success: (data) ->
+        $.plot($("#event_language_graph"), data, {series: {pie: {show: true}}})
+    )
+
+  update_gender_breakdown = (accepted_only = false) ->
+    if accepted_only
+      params = {"accepted_only": 1}
+    else
+      params = {}
+    $.ajax(
+      url: "#{gender_breakdown_statistics_path}",
+      type: "GET",
+      dataType: "json",
+      data: params,
+      success: (data) ->
+        $.plot($("#event_gender_graph"), data, {series: {pie: {show: true}}})
+    )
+
+  update_events_breakdown = (type = "") ->
+    if type
+      params = {"type": type}
+    else
+      params = {}
+    $.ajax(
+      url: "#{events_by_state_statistics_path}",
+      type: "GET",
+      data: params,
+      dataType: "json",
+      success: (data) ->
+        $.plot($("#event_state_graph"), data, {
+          series: {
+            bars: { show: true, barWidth: 1 }
+          },
+          xaxis: {
+            ticks: [[0.5, "undecided"], [1.5,"accepted"], [2.5, "rejected"], [3.5, "withdrawn/canceled"]]
+          }
+        })
+    )
+
+  $ ->
+    $("#events_all_types").click (event) ->
+      update_events_breakdown()
+    $("#events_lectures_only").click (event) ->
+      update_events_breakdown("lectures")
+    $("#events_workshops_only").click (event) ->
+      update_events_breakdown("workshops")
+    $("#events_others_only").click (event) ->
+      update_events_breakdown("others")
+    update_events_breakdown()
+
+    $("#languages_all_events").click (event) ->
+      update_languages_breakdown()
+      event.preventDefault()
+    $("#languages_accepted_events_only").click (event) ->
+      update_languages_breakdown(true)
+      event.preventDefault()
+    update_languages_breakdown()
+
+    $("#gender_all_events").click (event) ->
+      update_gender_breakdown()
+      event.preventDefault()
+    $("#gender_accepted_events_only").click (event) ->
+      update_gender_breakdown(true)
+      event.preventDefault()
+    update_gender_breakdown()
+

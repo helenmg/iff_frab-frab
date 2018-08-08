@@ -1,6 +1,8 @@
-class EventPerson < ActiveRecord::Base
+class EventPerson < ApplicationRecord
   include UniqueToken
   include Rails.application.routes.url_helpers
+
+  class NotificationMissingException < StandardError; end
 
   ROLES = %i(coordinator submitter speaker moderator).freeze
   STATES = %i(canceled confirmed declined idea offer unclear attending).freeze
@@ -8,7 +10,9 @@ class EventPerson < ActiveRecord::Base
 
   belongs_to :event
   belongs_to :person
+  has_one :conference, through: :event
   after_save :update_speaker_count
+  after_save :update_event_conflicts
   after_destroy :update_speaker_count
 
   has_paper_trail meta: { associated_id: :event_id, associated_type: 'Event' }
@@ -18,17 +22,11 @@ class EventPerson < ActiveRecord::Base
     joins(event: :conference).where('conferences.id': conference).where('event_people.event_role': EventPerson::SPEAKER)
   }
 
-  def update_speaker_count
-    event = Event.find(self.event_id)
-    event.speaker_count = EventPerson.where(event_id: event.id, event_role: SPEAKER).count
-    event.save
-  end
-
   def confirm!
     self.role_state = 'confirmed'
     self.confirmation_token = nil
-    self.event.confirm! if self.event.transition_possible? :confirm
-    self.save!
+    event.confirm! if event.transition_possible? :confirm
+    save!
   end
 
   def generate_token!
@@ -38,60 +36,71 @@ class EventPerson < ActiveRecord::Base
 
   def available_between?(start_time, end_time)
     return unless start_time and end_time
-    conference = self.event.conference
-    availabilities = self.person.availabilities_in(conference)
+    conference = event.conference
+    availabilities = person.availabilities_in(conference)
     availabilities.any? { |a| a.within_range?(start_time) && a.within_range?(end_time) }
   end
 
   def set_default_notification(state)
-    conference = self.event.conference
-    locale = self.person.locale_for_mailing(conference)
+    conference = event.conference
+    locale = person.locale_for_mailing(conference)
     notification = conference.notifications.with_locale(locale).first
-    fail "Notification for #{locale} not found" if notification.nil?
+    raise NotificationMissingException, "Notification for #{locale} not found" if notification.nil?
 
-    self.notification_subject = notification[state+'_subject'] unless notification_subject.present?
-    self.notification_body = notification[state+'_body'] unless notification_body.present?
+    self.notification_subject = notification[state + '_subject'] unless notification_subject.present?
+    self.notification_body = notification[state + '_body'] unless notification_body.present?
     save
   end
 
   def substitute_notification_variables(state, field)
-    conference = self.event.conference
-    locale = self.person.locale_for_mailing(conference)
+    conference = event.conference
+    locale = person.locale_for_mailing(conference)
 
-    if field == :subject and self.notification_subject.present?
-      string = self.notification_subject
+    if field == :subject and notification_subject.present?
+      string = notification_subject
       self.notification_subject = nil
       save
-    elsif field == :body and self.notification_body.present?
-      string = self.notification_body
+    elsif field == :body and notification_body.present?
+      string = notification_body
       self.notification_body = nil
       save
     else
       notification = conference.notifications.with_locale(locale).first
       fail "Notification for #{locale} not found" if notification.nil?
       string = notification[state + '_' + field.to_s]
-      fail "Field #{state}_#{field.to_s} not found" unless string.present?
+      fail "Field #{state}_#{field} not found" unless string.present?
     end
 
-    string = string.gsub '%{conference}', conference.title
-    string = string.gsub '%{event}', self.event.title
-    string = string.gsub '%{forename}', self.person.first_name.presence || ''
-    string = string.gsub '%{surname}', self.person.last_name.presence || ''
-    string = string.gsub '%{public_name}', self.person.public_name.presence || ''
+    string.gsub! '%{conference}', conference.title
+    string.gsub! '%{event}', event.title
+    string.gsub! '%{forename}', person.first_name.presence || ''
+    string.gsub! '%{surname}', person.last_name.presence || ''
+    string.gsub! '%{public_name}', person.public_name.presence || ''
 
-    string = string.gsub '%{room}', self.event.room.name if self.event.room.present?
-    if self.event.start_time.present?
-      string = string.gsub '%{date}', I18n.l(self.event.start_time.to_date, locale: locale)
-      string = string.gsub '%{time}', I18n.l(self.event.start_time.to_time, locale: locale, format: '%X')
+    string.gsub! '%{room}', event.room.name if event.room.present?
+    if event.start_time.present?
+      string.gsub! '%{date}', event.start_time.in_time_zone(conference&.timezone).strftime('%F')
+      string.gsub! '%{time}', event.start_time.in_time_zone(conference&.timezone).strftime('%H:%M %z %Z')
     end
 
-    return string unless self.confirmation_token.present?
+    return string unless confirmation_token.present?
 
     # XXX ENV.fetch('FRAB_HOST') does not belong here
-    string.gsub '%{link}', cfp_event_confirm_by_token_url( conference_acronym: conference.acronym, id: self.event.id, token: self.confirmation_token, host: ENV.fetch('FRAB_HOST'), locale: locale )
+    string.gsub '%{link}', cfp_event_confirm_by_token_url(conference_acronym: conference.acronym, id: event.id, token: confirmation_token, host: ENV.fetch('FRAB_HOST'), locale: locale)
   end
 
   def to_s
-    "#{model_name.human}: #{self.person.full_name} (#{self.event_role})"
+    "#{model_name.human}: #{person.full_name} (#{event_role})"
+  end
+
+  private
+
+  def update_speaker_count
+    event.speaker_count = EventPerson.where(event_id: event.id, event_role: SPEAKER).count
+    event.save
+  end
+
+  def update_event_conflicts
+    event.update_speaker_conflicts(self)
   end
 end

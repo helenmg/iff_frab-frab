@@ -1,0 +1,67 @@
+%ul.tabs
+  - @conference.days.each_with_index do |day, index|
+    %li{class: day_active?(index)}
+      = link_to day.label, schedule_path(day: index)
+- if @conference.rooms.empty?
+  .row
+    .span16
+      .blank-slate
+        %p= raw(GitHub::Markdown.render(t('events_module.error_no_room')))
+- elsif @conference.events.count == 0
+  .row
+    .span16
+      .blank-slate
+        %p= raw(GitHub::Markdown.render(t('events_module.error_no_event')))
+- elsif @conference.days.count == 0
+  .row
+    .span16
+      .blank-slate
+        %p= raw(GitHub::Markdown.render(t('events_module.error_no_day')))
+- else
+  .row
+    .span16
+      %p
+        %b= t('events_module.col_toggle_rooms')
+      %p
+        - @conference.rooms.each do |room|
+          = link_to room.name, "#", class: "btn small success toggle-room", data: {room: room.name.downcase}
+        = link_to t('events_module.hide_all'), "#", id: "hide-all-rooms", class: "btn small danger"
+  .row
+    .span16
+      - @conference.rooms.each do |room|
+        - reset_cycle
+        %table.room{:"data-room" => room.name.downcase, :"data-room-id" => room.id}
+          %thead
+            %tr
+              %th= room.name
+          %tbody
+            - slot = 0
+            - each_timeslot do  |time|
+              %tr{class: cycle('odd', 'even')}
+                %td{:"data-time" => time.to_s(:rfc822)}
+                  - if slot % @conference.default_timeslots == 0
+                    = time.strftime("%H:%M")
+              - slot += 1
+      .clear
+      #event-pane
+        - @scheduled_events.each do |event|
+          = render 'event', event: event
+      #add-event-modal.modal{style: "display: none;"}
+        .modal-header
+          = link_to "×", "#", class: "close"
+          %h3
+            Add event at
+            %span#current-time &nbsp;
+        .modal-body
+          %p
+            = form_tag schedule_update_track_path, id: "update-track" do
+              = label_tag "track_select", t('events_module.track_select')
+              = select_tag "track_select", content_tag(:option, t('all'), selected: true) + options_from_collection_for_select(@conference.tracks, :id, :name)
+          %p
+            %ul#unscheduled-events
+              = render 'unscheduled_events'
+        .modal-footer
+          &nbsp;
+
+= javascript_include_tag "schedule"
+

@@ -1,0 +1,36 @@
+= render 'track_menu'
+
+%h2.title= t '.events'
+
+= render 'day_menu'
+
+- @view_model.events_by_day.each do |day, start_times|
+  %a{name: "day#{day.id}"}
+  %hr
+  - start_times.sort.each do |start_time, events|
+    %h2
+      = l(day.start_date, format: :day)
+      = start_time.strftime("%H:%M")
+    %hr.short
+
+    - if events.count >  0
+      - events.sort_by { |a| [a.track&.name ? 1 : 0, a.track&.name] }.each do |event|
+        .event-book
+          %h2= link_to event.title, public_event_path(id: event.id)
+          .label
+            - if event.subtitle.present?
+              %span= event.subtitle
+              \-
+            %span{class: track_class(event)}
+              = event.room&.name
+              - if event.language.present? && @conference.languages_including_subs.count > 1
+                = "(#{event.language})"
+
+          - if event.abstract.present?
+            %p= event.abstract.truncate(250)
+          - if event.description.present?
+            %p= event.description.truncate(1200)
+          .speakers
+            %ul
+              - event.speakers.each do |speaker|
+                %li= link_to speaker.public_name, public_speaker_path(id: speaker.id)

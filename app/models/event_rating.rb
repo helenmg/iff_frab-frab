@@ -1,10 +1,11 @@
-class EventRating < ActiveRecord::Base
+class EventRating < ApplicationRecord
   belongs_to :event, counter_cache: true
+  has_one :conference, through: :event
   belongs_to :person
 
   after_save :update_average
 
-  validates_presence_of :rating
+  validates :rating, presence: true
 
   validates :event, presence: true
   validates :person, presence: true
@@ -12,6 +13,6 @@ class EventRating < ActiveRecord::Base
   protected
 
   def update_average
-    self.event.recalculate_average_rating!
+    event.recalculate_average_rating!
   end
 end

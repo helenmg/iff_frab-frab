@@ -1,37 +1,32 @@
-class EventRatingsController < ApplicationController
-  before_action :authenticate_user!
-  before_action :not_submitter!
+class EventRatingsController < BaseConferenceController
   before_action :find_event
+  before_action :crew_only!
 
   def show
-    authorize! :read, EventRating
-    @rating = @event.event_ratings.find_by_person_id(current_user.person.id) || EventRating.new
+    @rating = @event.event_ratings.find_by(person_id: current_user.person.id) || EventRating.new
     setup_batch_reviews_next_event
   end
 
   def create
     # only one rating allowed, if one exists update instead
-    return update if @event.event_ratings.find_by_person_id(current_user.person.id)
+    return update if @event.event_ratings.find_by(person_id: current_user.person.id)
 
     @rating = new_event_rating
-    authorize! :create, @rating
-
     if @rating.save
-      redirect_to event_event_rating_path, notice: 'Rating saved successfully.'
+      redirect_to event_event_rating_path, notice: t('ratings_module.notice_rating_created')
     else
-      flash[:alert] = 'Failed to create event rating: ' + @rating.errors.full_messages.join
+      flash[:alert] = t('ratings_module.error_creating', {error:  @rating.errors.full_messages.join})
       render action: 'show'
     end
   end
 
   def update
-    @rating = @event.event_ratings.find_by_person_id!(current_user.person.id)
-    authorize! :update, @rating
+    @rating = @event.event_ratings.find_by!(person_id: current_user.person.id)
 
     if @rating.update_attributes(event_rating_params)
-      redirect_to event_event_rating_path, notice: 'Rating updated successfully.'
+      redirect_to event_event_rating_path, notice: t('ratings_module.notice_rating_updated')
     else
-      flash[:alert] = 'Failed to update event rating'
+      flash[:alert] = t('ratings_module.error_updating')
       render action: 'show'
     end
   end
@@ -56,7 +51,7 @@ class EventRatingsController < ApplicationController
   # filter according to users abilities
   def find_event
     @event = Event.find(params[:event_id])
-    @event_ratings = @event.event_ratings.accessible_by(current_ability)
+    @event_ratings = policy_scope(@event.event_ratings)
   end
 
   def event_rating_params

@@ -1,7 +1,7 @@
-class Link < ActiveRecord::Base
-  belongs_to :linkable, polymorphic: true
+class Link < ApplicationRecord
+  belongs_to :linkable, polymorphic: true, optional: true
 
-  validates_presence_of :title, :url
+  validates :title, :url, presence: true
 
   has_paper_trail meta: {
     associated_id: :linkable_id,
@@ -9,6 +9,6 @@ class Link < ActiveRecord::Base
   }
 
   def to_s
-    "#{model_name.human}: #{self.title}"
+    "#{model_name.human}: #{title}"
   end
 end

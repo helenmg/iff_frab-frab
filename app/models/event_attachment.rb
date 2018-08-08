@@ -1,4 +1,4 @@
-class EventAttachment < ActiveRecord::Base
+class EventAttachment < ApplicationRecord
   belongs_to :event
 
   has_attached_file :attachment
@@ -11,10 +11,10 @@ class EventAttachment < ActiveRecord::Base
   scope :is_public, -> { where(public: true) }
 
   def link_title
-    if self.title.present?
-      self.title
-    elsif self.attachment_file_name.present?
-      self.attachment_file_name
+    if title.present?
+      title
+    elsif attachment_file_name.present?
+      attachment_file_name
     else
       I18n.t('activerecord.models.event_attachment')
     end

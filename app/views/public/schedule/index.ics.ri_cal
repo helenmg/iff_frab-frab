@@ -1,4 +1,4 @@
-@conference.events_including_subs.is_public.accepted.order(:title).each do |event|
+@conference.schedule_events.order(:title).each do |event|
   next if event.start_time.nil?
   cal.event do |e|
     e.dtstamp = event.updated_at
@@ -11,7 +11,7 @@
     if @conference.program_export_base_url.blank?
       e.url = public_event_url(id: event.id)
     else
-      e.url = event.static_url
+      e.url = event.static_url(@conference)
     end
   end
 end

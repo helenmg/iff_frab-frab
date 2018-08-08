@@ -1,11 +1,9 @@
-class AvailabilitiesController < ApplicationController
-  before_action :authenticate_user!
-  before_action :not_submitter!
+class AvailabilitiesController < BaseConferenceController
   before_action :find_person
 
   def new
     @availabilities = Availability.build_for(@conference)
-    flash[:alert] = "#{@person.full_name} does not currently have any availabilities."
+    flash[:alert] = t('availabilities.error_person_unavailable', {person: @person.full_name})
   end
 
   def edit
@@ -14,14 +12,14 @@ class AvailabilitiesController < ApplicationController
 
   def update
     @person.update_attributes_from_slider_form(person_params)
-    redirect_to(person_url(@person), notice: 'Availibility was successfully updated.')
+    redirect_to(person_url(@person), notice: t('availabilities.success_update'))
   end
 
   private
 
   def find_person
     @person = Person.find(params[:person_id])
-    authorize! :create, @person
+    authorize @conference, :manage?
   end
 
   def person_params

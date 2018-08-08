@@ -1,9 +1,7 @@
-class ScheduleController < ApplicationController
-  before_action :authenticate_user!
-  before_action :not_submitter!
+class ScheduleController < BaseConferenceController
+  before_action :crew_only!, except: %i[update_track update_event]
 
   def index
-    authorize! :read, Event
     params[:day] ||= 0
     @schedules_events = []
     @day = @conference.days[params[:day].to_i]
@@ -13,58 +11,73 @@ class ScheduleController < ApplicationController
   end
 
   def update_track
-    authorize! :crud, Event
-    if params[:track_id] and params[:track_id] =~ /\d+/
-      @unscheduled_events = @conference.events.accepted.unscheduled.where(track_id: params[:track_id])
-    else
-      @unscheduled_events = @conference.events.accepted.unscheduled
-    end
+    authorize @conference, :manage?
+    @unscheduled_events = if params[:track_id] and params[:track_id] =~ /\d+/
+                            @conference.events.accepted.unscheduled.where(track_id: params[:track_id])
+                          else
+                            @conference.events.accepted.unscheduled
+                          end
     render partial: 'unscheduled_events'
   end
 
   def update_event
-    authorize! :crud, Event
+    authorize @conference, :manage?
     event = @conference.events.find(params[:id])
     affected_event_ids = event.update_attributes_and_return_affected_ids(event_params)
     @affected_events = @conference.events.find(affected_event_ids)
   end
 
   def new_pdf
-    authorize! :read, Event
+    @orientations = %w[auto landscape portrait]
   end
 
   def custom_pdf
-    authorize! :read, Event
+    return redirect_to :new_schedule_pdf unless params.key?(:room_ids)
+
     @page_size = params[:page_size]
+
     @day = @conference.days.find(params[:date_id])
-    @rooms = @conference.rooms.find(params[:room_ids])
+    rooms = @conference.rooms.find(params[:room_ids])
+    @view_model = ScheduleViewModel.new(@conference).for_day(@day)
+    @view_model.select_rooms(rooms)
+
     @layout = page_layout(params[:page_size], params[:half_page])
-    @events = filter_events_by_day_and_rooms(@day, @rooms)
+    @rooms_per_page = params[:rooms_per_page].to_i
+    @rooms_per_page = 1 if @rooms_per_page.zero?
+    @events = filter_events_by_day_and_rooms(@day, rooms)
+
+    @orientation = case params[:orientation]
+                   when 'landscape'
+                     :landscape
+                   when 'portrait'
+                     :portrait
+                   else
+                      rooms.size > 3 ? :landscape : :portrait
+                   end
 
     respond_to do |format|
       format.pdf
     end
+  rescue ActiveRecord::RecordNotFound => e
+    flash[:notice] = e.message
+    redirect_to action: :new_pdf
   end
 
   def html_exports
-    authorize! :read, @conference
   end
 
   def create_static_export
-    authorize! :read, @conference
-
+    return redirect_to schedule_path, notice: t('schedule_module.notice_no_base_url') if @conference.program_export_base_url.blank?
     StaticProgramExportJob.new.async.perform @conference, check_conference_locale(params[:export_locale])
-    redirect_to schedule_html_exports_path, notice: 'Static schedule export started. Please reload this page after a minute.'
+    redirect_to schedule_html_exports_path, notice: t('schedule_module.notice_static_export_started')
   end
 
   def download_static_export
-    authorize! :read, @conference
-
     conference_export = @conference.conference_export(check_conference_locale(params[:export_locale]))
-    if conference_export.present? and File.readable? conference_export.tarball.path
+    if conference_export&.tarball && File.readable?(conference_export.tarball.path)
       send_file conference_export.tarball.path, type: 'application/x-tar-gz'
     else
-      redirect_to schedule_path, notice: 'No export found to download.'
+      redirect_to schedule_path, notice: t('schedule_module.notice_no_export_found')
     end
   end
 
@@ -77,10 +90,8 @@ class ScheduleController < ApplicationController
   def check_conference_locale(locale = 'en')
     if @conference.language_codes.include?(locale)
       locale
-    elsif @conference.language_codes.present?
-      @conference.language_codes.first
     else
-      'en'
+      @conference.language_codes.first
     end
   end
 

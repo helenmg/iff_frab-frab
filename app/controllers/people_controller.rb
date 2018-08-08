@@ -1,39 +1,34 @@
-class PeopleController < ApplicationController
-  before_action :authenticate_user!
-  before_action :not_submitter!
-  after_action :restrict_people
+class PeopleController < BaseConferenceController
+  before_action :manage_only!, except: %i[show]
+  include Searchable
 
   # GET /people
-  # GET /people.xml
+  # GET /people.json
   def index
-    authorize! :administrate, Person
-    @people = search Person.involved_in(@conference), params
+    @people = search Person.involved_in(@conference)
 
     respond_to do |format|
       format.html { @people = @people.paginate page: page_param }
-      format.xml  { render xml: @people }
-      format.json { render json: @people }
+      format.json
     end
   end
 
   def speakers
-    authorize! :administrate, Person
-
     respond_to do |format|
       format.html do
-        result = search Person.involved_in(@conference), params
+        result = search Person.involved_in(@conference)
         @people = result.paginate page: page_param
       end
       format.text do
-        @people = Person.speaking_at(@conference).accessible_by(current_ability)
+        @people = Person.speaking_at(@conference)
         render text: @people.map(&:email).join("\n")
       end
     end
   end
 
   def all
-    authorize! :administrate, Person
-    result = search Person, params
+    authorize Person, :manage?
+    result = search Person
     @people = result.paginate page: page_param
 
     respond_to do |format|
@@ -42,44 +37,34 @@ class PeopleController < ApplicationController
   end
 
   # GET /people/1
-  # GET /people/1.xml
+  # GET /people/1.json
   def show
-    @person = Person.find(params[:id])
-    authorize! :read, @person
-    @current_events = @person.events_as_presenter_in(@conference)
-    @other_events = @person.events_as_presenter_not_in(@conference)
-    clean_events_attributes
-    @availabilities = @person.availabilities.where("conference_id = #{@conference.id}")
-    @expenses = @person.expenses.where(conference_id: @conference.id)
-    @expenses_sum_reimbursed = @person.sum_of_expenses(@conference, true)
-    @expenses_sum_non_reimbursed = @person.sum_of_expenses(@conference, false)
-
-    @transport_needs = @person.transport_needs.where(:conference_id => @conference.id)
+    @person = authorize Person.find(params[:id])
+    @view_model = PersonViewModel.new(current_user, @person, @conference)
 
     respond_to do |format|
       format.html
-      format.xml { render xml: @person }
-      format.json { render json: @person }
+      format.json
     end
   end
 
   def feedbacks
     @person = Person.find(params[:id])
-    authorize! :access, :event_feedback
+    authorize Conference, :index?
     @current_events = @person.events_as_presenter_in(@conference)
     @other_events = @person.events_as_presenter_not_in(@conference)
   end
 
   def attend
-    @person = Person.find(params[:id])
+    @person = authorize Person.find(params[:id])
     @person.set_role_state(@conference, 'attending')
     redirect_to action: :show
   end
 
   # GET /people/new
   def new
+    authorize Person
     @person = Person.new
-    authorize! :manage, @person
 
     respond_to do |format|
       format.html
@@ -88,22 +73,16 @@ class PeopleController < ApplicationController
 
   # GET /people/1/edit
   def edit
-    @person = Person.find(params[:id])
-    if @person.nil?
-      flash[:alert] = 'Not a valid person'
-      return redirect_to action: :index
-    end
-    authorize! :manage, @person
+    @person = authorize Person.find(params[:id])
   end
 
   # POST /people
   def create
-    @person = Person.new(person_params)
-    authorize! :manage, @person
+    @person = authorize Person.new(person_params)
 
     respond_to do |format|
       if @person.save
-        format.html { redirect_to(@person, notice: 'Person was successfully created.') }
+        format.html { redirect_to(@person, notice: t('people_module.notice_person_created')) }
       else
         format.html { render action: 'new' }
       end
@@ -112,13 +91,13 @@ class PeopleController < ApplicationController
 
   # PUT /people/1
   def update
-    @person = Person.find(params[:id])
-    authorize! :manage, @person
+    @person = authorize Person.find(params[:id])
 
     respond_to do |format|
       if @person.update_attributes(person_params)
-        format.html { redirect_to(@person, notice: 'Person was successfully updated.') }
+        format.html { redirect_to(@person, notice: t('people_module.notice_person_updated')) }
       else
+        flash_model_errors(@person)
         format.html { render action: 'edit' }
       end
     end
@@ -126,8 +105,7 @@ class PeopleController < ApplicationController
 
   # DELETE /people/1
   def destroy
-    @person = Person.find(params[:id])
-    authorize! :manage, @person
+    @person = authorize Person.find(params[:id])
     @person.destroy
 
     respond_to do |format|
@@ -137,38 +115,11 @@ class PeopleController < ApplicationController
 
   private
 
-  def restrict_people
-    @people = @people.accessible_by(current_ability) unless @people.nil?
-  end
-
-  def search(people, params)
-    if params.key?(:term) and not params[:term].empty?
-      term = params[:term]
-      sort = begin
-               params[:q][:s]
-             rescue
-               nil
-             end
-      @search = people.ransack(first_name_cont: term,
-                               last_name_cont: term,
-                               public_name_cont: term,
-                               email_cont: term,
-                               abstract_cont: term,
-                               description_cont: term,
-                               user_email_cont: term,
-                               m: 'or',
-                               s: sort)
-    else
-      @search = people.ransack(params[:q])
-    end
-
+  def search(people)
+    @search = perform_search(people, params,
+      %i(first_name_cont last_name_cont public_name_cont email_cont
+      abstract_cont description_cont user_email_cont))
     @search.result(distinct: true)
-  end
-
-  def clean_events_attributes
-    return if can? :crud, Event
-    @current_events.map(&:clean_event_attributes!)
-    @other_events.map(&:clean_event_attributes!)
   end
 
   def person_params

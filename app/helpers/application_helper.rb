@@ -1,28 +1,42 @@
 module ApplicationHelper
-  def accessible_conferences
-    conferences = []
-    if current_user.is_crew?
-      conferences = Conference.accessible_by_crew(current_user).order('created_at DESC')
-    else
-      conferences = Conference.order('created_at DESC')
+  def management_page_title
+    title = ''
+    title += @conference.acronym
+    if @event.present?
+      title += "- #{@event.title}"
+    elsif @person.present?
+      title += "- #{@person.full_name}"
     end
-    conferences
+    title += '- Conference Management'
+    title
+  end
+
+  def home_page_title
+    'frab - home'
+  end
+
+  def accessible_conferences
+    if current_user.is_admin?
+      Conference.creation_order
+    elsif current_user.is_crew?
+      Conference.accessible_by_crew(current_user).creation_order
+    else
+      Conference.accessible_by_submitter(current_user)
+    end
   end
 
   def manageable_conferences
-    conferences = []
-    if current_user.is_crew?
-      conferences = Conference.accessible_by_orga(current_user).order('created_at DESC')
+    if current_user.is_admin?
+      Conference.creation_order
+    elsif current_user.is_crew?
+      Conference.accessible_by_orga(current_user).creation_order
     else
-      conferences = Conference.order('created_at DESC')
+      []
     end
-    conferences
   end
 
   def active_class?(*paths)
-    active = false
-    paths.each { |path| active ||= current_page?(path) }
-    active ? 'active' : nil
+    'active' if paths.any? { |path| current_page?(path.gsub(/\?.*/, '')) }
   end
 
   def image_box(image, size)
@@ -38,7 +52,7 @@ module ApplicationHelper
   end
 
   def duration_to_time(duration_in_minutes)
-    '%02d:%02d' % [ duration_in_minutes / 60, duration_in_minutes % 60 ]
+    '%02d:%02d' % [duration_in_minutes / 60, duration_in_minutes % 60]
   end
 
   def icon(name)
@@ -49,7 +63,7 @@ module ApplicationHelper
     options[:class] = "btn #{button_type}"
     if options[:hint]
       options[:rel] = 'popover'
-      options['data-original-title'] = 'Hint'
+      options['data-original-title'] = t('hint')
       options['data-content'] = options[:hint]
       options['data-placement'] = 'below'
       options[:hint] = nil
@@ -79,9 +93,9 @@ module ApplicationHelper
 
   def t_boolean(b)
     if b
-      t("simple_form.yes")
+      t('simple_form.yes')
     else
-      t("simple_form.no")
+      t('simple_form.no')
     end
   end
 
@@ -91,11 +105,28 @@ module ApplicationHelper
   end
 
   def by_speakers(event)
-    speakers = event.speakers.map { |p| link_to p.public_name, p }
-    if not speakers.empty?
-      "by #{speakers.join(', ')}".html_safe
+    speakers = event.speakers.map { |p| link_to(p.public_name, p) }
+    if speakers.present?
+      (t('by') + ' ').html_safe + safe_join(speakers, ', ')
     else
       ''
     end
+  end
+
+  def show_cfp?(user, conference)
+    return unless user
+    return true if conference.call_for_participation&.still_running? && conference.days.present?
+    return true if user.person.involved_in?(conference)
+    false
+  end
+
+  def humanized_access_level
+    return t('role.admin') if current_user.is_admin?
+    return t('role.orga') if current_user.has_role?(@conference, 'orga')
+    return t('role.coordinator') if current_user.has_role?(@conference, 'coordinator')
+    return t('role.reviewer') if current_user.has_role?(@conference, 'reviewer')
+    return t('role.crew') if current_user.is_crew?
+    return t('role.submitter') if current_user.is_submitter?
+    fail 'should not happen: user without acl'
   end
 end

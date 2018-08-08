@@ -26,10 +26,16 @@
                     %span.small-font= l day.date
                   - else
                     = t 'public.schedule.nav.schedule'
+
             %li{class: selected(/speakers.*$/)}
               = link_to t('public.schedule.nav.speakers'), public_speakers_path
             %li{class: selected(/events.*$/)}
               = link_to t('public.schedule.nav.events'), public_events_path
+            %li{class: selected(/timeline.*$/)}
+              = link_to t('.timeline'), public_timeline_path
+            %li{class: selected(/booklet.*$/)}
+              = link_to t('.booklet'), public_booklet_path
+
             %li{class: selected(/qrcode$/)}
               = link_to t('public.schedule.nav.qrcode'), public_qrcode_path
 
@@ -37,8 +43,9 @@
 
       #main-content
         - unless @conference.schedule_version.nil? or @conference.schedule_version.empty?
-          %p.release
-            = "Version #{@conference.schedule_version}"
+          %p.release= t('conferences_module.version', {version: @conference.schedule_version})
 
         = yield
         %br.clear/
+
+    #footer= raw(GitHub::Markdown.render(t('conferences_module.footer')))

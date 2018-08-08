@@ -7,7 +7,7 @@
       - availability.nil? and availability = Availability.new(day: day, conference: conference)
       = render(partial: 'shared/availabilities_slider', locals: { f: f, day: day, availability: availability })
   .actions
-    - if can? :crud, person
+    - if policy(person).edit_availability?
       = f.button :submit, t("cfp.save_availability"), class: 'primary'
 
 :javascript
@@ -50,7 +50,7 @@
         var el_slider      = $('span#day_'+id+' .time_range_slider');
         el_slider.slider({
           range: true,
-          step: 15*60,
+          step: #{conference.timeslot_duration}*60,
           min: el_slider.data("min"),
           max: el_slider.data("max"),
           values: [el_slider.data("from"), el_slider.data("to")],

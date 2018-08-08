@@ -1,0 +1,2 @@
+module TicketServerAdapter
+end

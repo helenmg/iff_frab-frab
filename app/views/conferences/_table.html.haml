@@ -8,10 +8,10 @@
         %th= sort_link @search, :created_at, term: params[:term]
         %th= sort_link @search, :email, term: params[:term]
       - else
-        %th Acronym
-        %th Title
-        %th Date
-        %th Email
+        %th= Conference.human_attribute_name('acronym')
+        %th= t('title')
+        %th= t('created_at')
+        %th= t('email')
       %th.last
   %tbody
     - collection.each do |conference|
@@ -22,8 +22,7 @@
         %td= l(conference.created_at.to_date)
         %td= conference.email
         %td.buttons
-          = action_button "small", 'Show', conference_home_path(conference_acronym: conference.acronym)
-          - if can? :update, conference
-            = action_button "small", 'Edit', edit_conference_path(conference_acronym: conference.acronym)
-          - if can? :destroy, conference
-            = action_button "small danger", 'Destroy', conference_path(conference_acronym: conference.acronym), confirm: 'Are you sure?', method: :delete
+          - if policy(conference).read?
+            = action_button "small", t('show'), conference_path(conference_acronym: conference.acronym)
+          - if policy(conference).destroy?
+            = action_button "small danger", t('destroy'), conference_path(conference_acronym: conference.acronym), data: { confirm: t('are_you_sure') }, method: :delete

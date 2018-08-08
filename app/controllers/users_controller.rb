@@ -1,21 +1,16 @@
-class UsersController < ApplicationController
-  before_action :authenticate_user!
-  before_action :not_submitter!
+class UsersController < BaseCrewController
   before_action :find_person
+  before_action :authorize_person_user, except: %i[new create]
+  before_action :ensure_user, except: %i[new create]
+  layout :layout_if_conference
 
   # GET /users/1
-  # GET /users/1.xml
   def show
-    @user = @person.user
-    can_manage_user!
-
-    redirect_to new_person_user_path(@person) unless @user
   end
 
   # GET /users/new
   def new
     @user = User.new
-    can_manage_user!
 
     respond_to do |format|
       format.html # new.html.erb
@@ -24,30 +19,20 @@ class UsersController < ApplicationController
 
   # GET /users/1/edit
   def edit
-    @user = @person.user
-    can_manage_user!
-
-    @user.conference_users.to_a.select! { |cu|
-      can? :assign_user_roles, cu.conference
-    }
+    @user.conference_users = policy_scope(@user.conference_users)
   end
 
   # POST /users
   def create
-    @user = User.new(user_params)
-    can_manage_user!
+    @user = authorize User.new(user_params)
 
-    if can? :assign_roles, User
-      @user.role = user_params[:role]
-    else
-      @user.role = 'submitter'
-    end
+    set_allowed_user_roles(user_params[:role], 'submitter')
     @user.person = @person
     @user.skip_confirmation!
 
     respond_to do |format|
       if @user.save
-        format.html { redirect_to(person_user_path(@person), notice: 'User was successfully created.') }
+        format.html { redirect_to(edit_person_user_path(@person), notice: t('users_module.notice_user_created')) }
       else
         format.html { render action: 'new' }
       end
@@ -56,31 +41,22 @@ class UsersController < ApplicationController
 
   # PUT /users/1
   def update
-    @user = @person.user
-    can_manage_user!
-
     [:password, :password_confirmation].each do |password_key|
       params[:user].delete(password_key) if params[:user][password_key].blank?
     end
 
-    # user.role
-    if can? :assign_roles, User
-      @user.role = params[:user][:role]
-    elsif can_only_manage_crew_roles
-      role = params[:user][:role]
-      @user.role = role if User::USER_ROLES.include? role
-    end
+    set_allowed_user_roles(params[:user][:role])
     params[:user].delete(:role)
 
-    # user.conference_users
-    if can_only_manage_crew_roles and params[:user][:conference_users_attributes].present?
-      filter_conference_users(params[:user][:conference_users_attributes])
-    end
+    filter_conference_users(params[:user][:conference_users_attributes]) if orga_modifies_conference_users?
 
     respond_to do |format|
       if @user.update_attributes(user_params)
-        format.html { redirect_to(person_user_path(@person), notice: 'User was successfully updated.') }
+        @user.confirm unless @user.confirmed?
+        bypass_sign_in(@user) if current_user == @user
+        format.html { redirect_to(edit_crew_user_path(@person), notice: t('users_module.notice_user_updated')) }
       else
+        flash[:errors] = @user.errors.full_messages.join
         format.html { render action: 'edit' }
       end
     end
@@ -94,36 +70,46 @@ class UsersController < ApplicationController
 
   def user_params
     params.require(:user).permit(:id, :role, :email, :password, :password_confirmation,
-                                conference_users_attributes: %i(id role conference_id _destroy))
+      conference_users_attributes: %i(id role conference_id _destroy))
   end
 
-  def can_manage_user!
-    if @user.nil? or @user.id.nil?
-      authorize! :administrate, User
-    else
-      authorize! :crud, @user
+  def assign_user_role?(role)
+    policy(Conference).orga? && User::USER_ROLES.include?(role)
+  end
+
+  def orga_modifies_conference_users?
+    return if current_user.is_admin?
+    policy(Conference).orga? && params[:user][:conference_users_attributes].present?
+  end
+
+  def set_allowed_user_roles(role, fallback=nil)
+    if current_user.is_admin?
+      @user.role = role
+    elsif assign_user_role?(role)
+      @user.role = role
+    elsif fallback
+      @user.role = fallback
     end
   end
 
-  def can_only_manage_crew_roles
-    cannot? :assign_roles, User and can? :assign_user_roles, User
+  def ensure_user
+    return if current_user.is_admin?
+    redirect_to new_person_user_path(@person) unless @user
   end
 
   def find_person
     @person = Person.find(params[:person_id])
   end
 
-  def filter_conference_users(conference_users)
-    delete = []
-    conference_users.each do |id, conference_user|
-      if conference_user.key?(:conference_id) and conference_user[:conference_id].present?
-        conference = Conference.find conference_user[:conference_id]
-        delete << id unless can? :assign_user_roles, conference
-      else
-        delete << id
-      end
-    end
+  def authorize_person_user
+    @user = authorize @person.user
+  end
 
-    delete.each { |p| conference_users.delete(p) }
+  def filter_conference_users(conference_users)
+    orga_conferences = policy_scope(current_user.conference_users).map(&:conference_id)
+    conference_users.delete_if do |_, conference_user|
+      conference_id = conference_user[:conference_id]
+      conference_id.nil? || !orga_conferences.include?(conference_id.to_i)
+    end
   end
 end

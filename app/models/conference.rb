@@ -1,9 +1,10 @@
-class Conference < ActiveRecord::Base
+class Conference < ApplicationRecord
   include ConferenceStatistics
-
-  TICKET_TYPES = %w(otrs rt redmine integrated).freeze
+  include SubConference
+  include HasTicketServer
 
   has_many :availabilities, dependent: :destroy
+  has_many :classifiers, dependent: :destroy
   has_many :conference_users, dependent: :destroy
   has_many :days, dependent: :destroy
   has_many :events, dependent: :destroy
@@ -14,17 +15,16 @@ class Conference < ActiveRecord::Base
   has_many :conference_exports, dependent: :destroy
   has_many :mail_templates, dependent: :destroy
   has_many :transport_needs, dependent: :destroy
-  has_many :subs, class_name: Conference, foreign_key: :parent_id
+  has_many :subs, class_name: 'Conference', foreign_key: :parent_id
   has_one :call_for_participation, dependent: :destroy
-  has_one :ticket_server, dependent: :destroy
-  belongs_to :parent, class_name: Conference
+  belongs_to :parent, class_name: 'Conference', optional: true
 
   accepts_nested_attributes_for :rooms, reject_if: proc { |r| r['name'].blank? }, allow_destroy: true
+  accepts_nested_attributes_for :classifiers, reject_if: proc { |r| r['name'].blank? }, allow_destroy: true
   accepts_nested_attributes_for :days, reject_if: :all_blank, allow_destroy: true
   accepts_nested_attributes_for :notifications, allow_destroy: true
   accepts_nested_attributes_for :tracks, reject_if: :all_blank, allow_destroy: true
   accepts_nested_attributes_for :languages, reject_if: :all_blank, allow_destroy: true
-  accepts_nested_attributes_for :ticket_server
 
   validates :title,
     :acronym,
@@ -40,17 +40,19 @@ class Conference < ActiveRecord::Base
   validates :acronym, format: { with: /\A[a-zA-Z0-9_-]*\z/ }
   validates :color, format: { with: /\A[a-zA-Z0-9]*\z/ }
   validate :days_do_not_overlap
-  validate :subs_dont_allow_days
-  validate :subs_cant_have_subs
 
   after_update :update_timeslots
 
   has_paper_trail
 
+  has_attached_file :logo,
+    styles: { tiny: '16x16>', small: '32x32>', large: '256x256>' },
+    default_url: 'conference_:style.png'
+
   scope :has_submission, ->(person) {
     joins(events: [{ event_people: :person }])
       .where(EventPerson.arel_table[:event_role].in(EventPerson::SPEAKER))
-      .where(Person.arel_table[:id].eq(person.id)).uniq
+      .where(Person.arel_table[:id].eq(person.id)).distinct
   }
 
   scope :creation_order, -> { order('conferences.created_at DESC') }
@@ -63,8 +65,18 @@ class Conference < ActiveRecord::Base
     joins(:conference_users).where(conference_users: { user_id: user, role: 'orga' })
   }
 
+  scope :past, -> { where(Conference.arel_table[:end_date].lt(Time.now)).order('start_date DESC') }
+  scope :future, -> { where(Conference.arel_table[:end_date].gt(Time.now)).order('start_date DESC') }
+
+  self.per_page = 10
+
   def self.current
-    order('created_at DESC').first
+    return if Conference.count.zero?
+    order('created_at DESC, id DESC').first
+  end
+
+  def self.accessible_by_submitter(user)
+    (Conference.has_submission(user.person) | Conference.future).select(&:call_for_participation).sort_by(&:created_at)
   end
 
   alias own_days days
@@ -72,6 +84,12 @@ class Conference < ActiveRecord::Base
   def days
     return parent.days if sub_conference?
     own_days
+  end
+
+  def cfp_open?
+    return false if call_for_participation.nil?
+    return false if call_for_participation.in_the_future?
+    true
   end
 
   def timezone
@@ -84,26 +102,6 @@ class Conference < ActiveRecord::Base
     attributes['timeslot_duration']
   end
 
-  def include_subs
-    [self, subs].flatten.uniq
-  end
-
-  def events_including_subs
-    Event.where(conference: include_subs)
-  end
-
-  def rooms_including_subs
-    Room.where(conference: include_subs)
-  end
-
-  def tracks_including_subs
-    Track.where(conference: include_subs)
-  end
-
-  def languages_including_subs
-    Language.where(attachable: include_subs)
-  end
-
   def submission_data
     result = {}
     events = self.events.order(:created_at)
@@ -111,7 +109,7 @@ class Conference < ActiveRecord::Base
       date = events.first.created_at.to_date
       while date <= events.last.created_at.to_date
         result[date.to_time.to_i * 1000] = 0
-        date = date.since(1.days).to_date
+        date = date.since(1.day).to_date
       end
     end
     events.each do |event|
@@ -162,15 +160,9 @@ class Conference < ActiveRecord::Base
     days.each(&block)
   end
 
-  def in_the_past
+  def in_the_past?
     return false if days.nil? or days.empty?
     return false if Time.now < days.last.end_date
-    true
-  end
-
-  def ticket_server_enabled?
-    return false if ticket_type.nil?
-    return false if ticket_type == 'integrated'
     true
   end
 
@@ -182,21 +174,33 @@ class Conference < ActiveRecord::Base
     parent.present?
   end
 
+  # these events should appear in the schedule
+  def schedule_events
+    events_including_subs
+      .includes(:track, :room)
+      .is_public.confirmed
+      .scheduled
+  end
+
   def to_s
     "#{model_name.human}: #{title} (#{acronym})"
+  end
+
+  def to_label
+    acronym
   end
 
   private
 
   def update_timeslots
-    return unless timeslot_duration_changed? and events.count > 0
-    old_duration = timeslot_duration_was
+    return unless saved_change_to_timeslot_duration? and events.count.positive?
+    old_duration = timeslot_duration_before_last_save
     factor = old_duration / timeslot_duration
-    Event.paper_trail.disable
+    PaperTrail.request.disable_model(Event)
     events_including_subs.each do |event|
       event.update_attributes(time_slots: event.time_slots * factor)
     end
-    Event.paper_trail.enable
+    PaperTrail.request.enable_model(Event)
   end
 
   # if a conference has multiple days, they sould not overlap
@@ -209,21 +213,5 @@ class Conference < ActiveRecord::Base
         errors.add(:days, "day #{day} overlaps with day before")
       end
     }
-  end
-
-  def subs_dont_allow_days
-    return unless sub_conference?
-    if Day.where(conference: self).any?
-      errors.add(:days, 'are not allowed for conferences with a parent')
-      errors.add(:parent, 'may not be set for conferences with days')
-    end
-  end
-
-  def subs_cant_have_subs
-    return unless sub_conference?
-    if subs.any?
-      errors.add(:subs, 'cannot have sub-conferences and a parent')
-      errors.add(:parent, 'may not be set for conferences with a parent')
-    end
   end
 end

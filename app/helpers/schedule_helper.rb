@@ -1,10 +1,12 @@
 module ScheduleHelper
-  def day_active?(index)
-    'active' if params[:day].to_i == index
+
+  def schedule_button_text
+    return t('schedule_module.preview_public_schedule') if @conference.schedule_public
+    t('schedule_module.preview_schedule')
   end
 
-  def landscape?
-    @rooms.size > 3
+  def day_active?(index)
+    'active' if params[:day].to_i == index
   end
 
   # for pdf

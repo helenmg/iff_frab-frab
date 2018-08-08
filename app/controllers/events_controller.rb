@@ -1,27 +1,21 @@
-class EventsController < ApplicationController
-  before_action :authenticate_user!
-  before_action :not_submitter!
-  after_action :restrict_events
+class EventsController < BaseConferenceController
+  include Searchable
 
   # GET /events
-  # GET /events.xml
+  # GET /events.json
   def index
-    authorize! :read, Event
-
-    @events = search @conference.events.includes(:track), params
+    authorize @conference, :read?
+    @events = search @conference.events.includes(:track)
 
     clean_events_attributes
     respond_to do |format|
-      format.html {
-        @events = @events.paginate page: page_param
-      }
-      format.xml  { render xml: @events }
-      format.json { render json: @events }
+      format.html { @events = @events.paginate page: page_param }
+      format.json
     end
   end
 
   def export_accepted
-    authorize! :read, Event
+    authorize @conference, :read?
     @events = @conference.events.is_public.accepted
 
     respond_to do |format|
@@ -30,7 +24,7 @@ class EventsController < ApplicationController
   end
 
   def export_confirmed
-    authorize! :read, Event
+    authorize @conference, :read?
     @events = @conference.events.is_public.confirmed
 
     respond_to do |format|
@@ -40,21 +34,21 @@ class EventsController < ApplicationController
 
   # current_users events
   def my
-    authorize! :read, Event
+    authorize @conference, :read?
 
-    result = search @conference.events.associated_with(current_user.person), params
+    result = search @conference.events.associated_with(current_user.person)
     clean_events_attributes
     @events = result.paginate page: page_param
   end
 
   # events as pdf
   def cards
-    authorize! :crud, Event
-    if params[:accepted]
-      @events = @conference.events.accepted
-    else
-      @events = @conference.events
-    end
+    authorize @conference, :manage?
+    @events = if params[:accepted]
+                @conference.events.accepted
+              else
+                @conference.events
+              end
 
     respond_to do |format|
       format.pdf
@@ -63,9 +57,9 @@ class EventsController < ApplicationController
 
   # show event ratings
   def ratings
-    authorize! :create, EventRating
+    authorize @conference, :read?
 
-    result = search @conference.events, params
+    result = search @conference.events
     @events = result.paginate page: page_param
     clean_events_attributes
 
@@ -81,17 +75,17 @@ class EventsController < ApplicationController
 
   # show event feedbacks
   def feedbacks
-    authorize! :access, :event_feedback
-    result = search @conference.events.accepted, params
+    authorize @conference, :read?
+    result = search @conference.events.accepted
     @events = result.paginate page: page_param
   end
 
   # start batch event review
   def start_review
-    authorize! :create, EventRating
+    authorize @conference, :read?
     ids = Event.ids_by_least_reviewed(@conference, current_user.person)
     if ids.empty?
-      redirect_to action: 'ratings', notice: 'You have already reviewed all events:'
+      redirect_to action: 'ratings', notice: t('ratings_module.notice_already_rated_everything')
     else
       session[:review_ids] = ids
       redirect_to event_event_rating_path(event_id: ids.first)
@@ -99,16 +93,14 @@ class EventsController < ApplicationController
   end
 
   # GET /events/1
-  # GET /events/1.xml
+  # GET /events/1.json
   def show
-    @event = Event.find(params[:id])
-    authorize! :read, @event
+    @event = authorize Event.find(params[:id])
 
     clean_events_attributes
     respond_to do |format|
       format.html # show.html.erb
-      format.xml  { render xml: @event }
-      format.json { render json: @event }
+      format.json
     end
   end
 
@@ -116,13 +108,12 @@ class EventsController < ApplicationController
   # feedback tabs are handled in routes.rb
   # GET /events/2/people
   def people
-    @event = Event.find(params[:id])
-    authorize! :read, @event
+    @event = authorize Event.find(params[:id])
   end
 
   # GET /events/new
   def new
-    authorize! :crud, Event
+    authorize @conference, :manage?
     @event = Event.new
     @start_time_options = @conference.start_times_by_day
 
@@ -133,29 +124,25 @@ class EventsController < ApplicationController
 
   # GET /events/1/edit
   def edit
-    @event = Event.find(params[:id])
-    authorize! :update, @event
-
-    @start_time_options = @event.possible_start_times
+    @event = authorize Event.find(params[:id])
+    @start_time_options = PossibleStartTimes.new(@event).all
   end
 
   # GET /events/2/edit_people
   def edit_people
-    @event = Event.find(params[:id])
+    @event = authorize Event.find(params[:id])
     @persons = Person.fullname_options
-
-    authorize! :update, @event
   end
 
   # POST /events
   def create
     @event = Event.new(event_params)
     @event.conference = @conference
-    authorize! :create, @event
+    authorize @event
 
     respond_to do |format|
       if @event.save
-        format.html { redirect_to(@event, notice: 'Event was successfully created.') }
+        format.html { redirect_to(@event, notice: t('cfp.event_created_notice')) }
       else
         @start_time_options = @conference.start_times_by_day
         format.html { render action: 'new' }
@@ -165,15 +152,15 @@ class EventsController < ApplicationController
 
   # PUT /events/1
   def update
-    @event = Event.find(params[:id])
-    authorize! :update, @event
+    @event = authorize Event.find(params[:id])
 
     respond_to do |format|
       if @event.update_attributes(event_params)
-        format.html { redirect_to(@event, notice: 'Event was successfully updated.') }
+        format.html { redirect_to(@event, notice: t('cfp.event_updated_notice')) }
         format.js   { head :ok }
       else
-        @start_time_options = @event.possible_start_times
+        flash_model_errors(@event)
+        @start_time_options = PossibleStartTimes.new(@event).all
         format.html { render action: 'edit' }
         format.js { render json: @event.errors, status: :unprocessable_entity }
       end
@@ -183,35 +170,35 @@ class EventsController < ApplicationController
   # update event state
   # GET /events/2/update_state?transition=cancel
   def update_state
-    @event = Event.find(params[:id])
-    authorize! :update, @event
+    @event = authorize Event.find(params[:id])
 
     if params[:send_mail]
 
       # If integrated mailing is used, take care that a notification text is present.
       if @event.conference.notifications.empty?
-        return redirect_to edit_conference_path, alert: 'No notification text present. Please change the default text for your needs, before accepting/ rejecting events.'
+        return redirect_to edit_conference_path, alert: t('emails_module.error_missing_notification_text')
       end
 
-      return redirect_to(@event, alert: 'Cannot send mails: Please specify an email address for this conference.') unless @conference.email
+      return redirect_to(@event, alert: t('emails_module.error_missing_conference_email')) unless @conference.email
 
-      return redirect_to(@event, alert: 'Cannot send mails: Not all speakers have email addresses.') unless @event.speakers.all?(&:email)
+      return redirect_to(@event, alert: t('emails_module.error_missing_speaker_email')) unless @event.speakers.all?(&:email)
     end
+
+    return redirect_to(@event, alert: t('emails_module.error_state_update')) unless @event.transition_possible?(params[:transition])
 
     begin
       @event.send(:"#{params[:transition]}!", send_mail: params[:send_mail], coordinator: current_user.person)
     rescue => ex
-      return redirect_to(@event, alert: "Cannot update state: #{ex}.")
+      return redirect_to(@event, alert: t('emails_module.error_state_update_ex', {ex: ex}))
     end
 
-    redirect_to @event, notice: 'Event was successfully updated.'
+    redirect_to @event, notice: t('emails_module.notice_event_updated')
   end
 
   # add custom notifications to all the event's speakers
   # POST /events/2/custom_notification
   def custom_notification
-    @event = Event.find(params[:id])
-    authorize! :update, @event
+    @event = authorize Event.find(params[:id])
 
     case @event.state
     when 'accepting'
@@ -221,18 +208,21 @@ class EventsController < ApplicationController
     when 'confirmed'
       state = 'schedule'
     else
-      return redirect_to(@event, alert: "Event not in a notifiable state.")
+      return redirect_to(@event, alert: t('emails_module.error_unnotifiable_state'))
     end
 
-    @event.event_people.presenter.each{ |p| p.set_default_notification(state) }
+    begin
+      @event.event_people.presenter.each { |p| p.set_default_notification(state) }
+    rescue NotificationMissingException => ex
+      return redirect_to(@event, alert: t('emails_module.error_failed_setting_notification', {ex: ex}))
+    end
 
     redirect_to edit_people_event_path(@event)
   end
 
   # DELETE /events/1
   def destroy
-    @event = Event.find(params[:id])
-    authorize! :destroy, @event
+    @event = authorize Event.find(params[:id])
     @event.destroy
 
     respond_to do |format|
@@ -242,41 +232,24 @@ class EventsController < ApplicationController
 
   private
 
-  def restrict_events
-    @events = @events.accessible_by(current_ability) unless @events.nil?
-  end
-
   def clean_events_attributes
-    return if can? :crud, Event
-    @event.clean_event_attributes! unless @event.nil?
-    @events.map(&:clean_event_attributes!) unless @events.nil?
+    return if policy(@conference).manage?
+    @event&.clean_event_attributes!
+    @events&.map(&:clean_event_attributes!)
   end
 
-  def search(events, params)
+  # returns duplicates if ransack has to deal with the associated model
+  def search(events)
     filter = events
     filter = filter.where(state: params[:event_state]) if params[:event_state].present?
     filter = filter.where(event_type: params[:event_type]) if params[:event_type].present?
     filter = filter.where(track: @conference.tracks.find_by(:name => params[:track_name])) if params[:track_name].present?
-
-    if params.key?(:term) and not params[:term].empty?
-      term = params[:term]
-      sort = begin
-               params[:q][:s]
-             rescue
-               nil
-             end
-      @search = filter.ransack(title_cont: term,
-                               description_cont: term,
-                               abstract_cont: term,
-                               track_name_cont: term,
-                               event_type_is: term,
-                               m: 'or',
-                               s: sort)
+    @search = perform_search(filter, params, %i(title_cont description_cont abstract_cont track_name_cont event_type_is))
+    if params.dig('q', 's')&.match('track_name')
+      @search.result
     else
-      @search = filter.ransack(params[:q])
+      @search.result(distinct: true)
     end
-
-    @search.result(distinct: true)
   end
 
   def event_params
@@ -285,6 +258,7 @@ class EventsController < ApplicationController
       event_attachments_attributes: %i(id title attachment public _destroy),
       ticket_attributes: %i(id remote_ticket_id),
       links_attributes: %i(id title url _destroy),
+      event_classifiers_attributes: %i(id classifier_id value _destroy),
       event_people_attributes: %i(id person_id event_role role_state notification_subject notification_body _destroy)
     )
   end

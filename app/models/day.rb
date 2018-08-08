@@ -1,8 +1,11 @@
-class Day < ActiveRecord::Base
+class Day < ApplicationRecord
   include HumanizedDateRange
 
+  after_commit :update_conference_date
+  after_destroy :update_conference_date
+
   belongs_to :conference
-  has_many :availabilities
+  has_many :availabilities, dependent: :destroy
 
   has_paper_trail meta: { associated_id: :conference_id, associated_type: 'Conference' }
 
@@ -14,15 +17,15 @@ class Day < ActiveRecord::Base
   validate :does_not_overlap
 
   def start_date_before_end_date
-    self.errors.add(:end_date, 'should be after start date') if self.start_date >= self.end_date
+    errors.add(:end_date, 'should be after start date') if start_date >= end_date
   end
 
   def does_not_overlap
-    return if self.conference.nil?
-    self.conference.days.each { |day|
+    return if conference.nil?
+    conference.days.each { |day|
       next if day == self
-      self.errors.add(:start_date, "day overlapping with day #{day.label} from this conference") if self.start_date.between?(day.start_date, day.end_date)
-      self.errors.add(:end_date, "day overlapping with day #{day.label} from this conference") if self.end_date.between?(day.start_date, day.end_date)
+      errors.add(:start_date, "day overlapping with day #{day.label} from this conference") if start_date.between?(day.start_date, day.end_date)
+      errors.add(:end_date, "day overlapping with day #{day.label} from this conference") if end_date.between?(day.start_date, day.end_date)
     }
   end
 
@@ -37,29 +40,49 @@ class Day < ActiveRecord::Base
   end
 
   def start_times
-    start_times_map { |time, pretty| pretty }
+    start_times_map { |_time, pretty| pretty }
   end
 
   def label
-    self.start_date.strftime('%Y-%m-%d')
+    start_date.strftime('%Y-%m-%d')
   end
-  alias_method :to_label, :label
+  alias to_label label
 
   def date
-    self.start_date.to_date
+    start_date.to_date
   end
 
   # ActionView::Helper.options_for_select
   def first
-    self.label
+    label
   end
 
   # ActionView::Helper.options_for_select
   def last
-    self.label
+    label
+  end
+
+  def day_index
+    conference.days.index(self)
+  end
+
+  def rooms_with_events
+    @rooms ||= conference.rooms_including_subs.select do |room|
+      room.events.confirmed.no_conflicts.is_public.scheduled_on(self).order(:start_time).present?
+    end
   end
 
   def to_s
-    "#{model_name.human}: #{self.label}"
+    "#{model_name.human}: #{label}"
+  end
+
+  private
+
+  def update_conference_date
+    return if conference.new_record?
+    start_date = conference.days.pluck(:start_date).min
+    end_date = conference.days.pluck(:end_date).min
+    conference.update(start_date: start_date, end_date: end_date)
+    Conference.where(parent_id: conference.id).update_all(start_date: start_date, end_date: end_date)
   end
 end

@@ -5,6 +5,7 @@
       %th= t("activerecord.attributes.event.title")
       - if @conference.event_state_visible
         %th= t("activerecord.attributes.event.state")
+        %th= t("cfp.scheduled")
       - if @conference.feedback_enabled
         %th
         %th= t(:event_feedback)
@@ -16,6 +17,13 @@
         %td= event.title
         - if @conference.event_state_visible
           %td= event.state
+          %td
+            -if event.start_time
+              =I18n.l(event.start_time, format: :long)
+              %br
+              =event.room&.name
+            -else
+              \-
         - if @conference.feedback_enabled
           %td
             %b= number_with_precision event.average_feedback, precision: 2
@@ -24,11 +32,13 @@
               s<sub>N-1</sub> = #{event.feedback_standard_deviation} n = #{event.event_feedbacks_count}
         %td
           = link_to t("edit"), edit_cfp_event_path(event), class: "btn small"
-          - if @conference.event_state_visible
+          - if @conference.event_state_visible || @conference.schedule_open?
             - if event.state == "unconfirmed"
               = link_to t("cfp.confirm"), confirm_cfp_event_path(event), method: :put, class: "btn success small"
             - if event.transition_possible? :withdrawn and event.start_time and event.start_time > Time.now
               = link_to t("cfp.withdraw"), withdraw_cfp_event_path(event), method: :put, confirm: t("cfp.withdrawal_confirmation"), class: "btn danger small"
+          - if @conference.schedule_open? && event.transition_possible?(:accept)
+            = link_to t("cfp.accept"), accept_cfp_event_path(event), method: :put, class: "btn success small"
       - if @conference.feedback_enabled
         - event.event_feedbacks.each do |feedback|
           - next if feedback.comment.blank?

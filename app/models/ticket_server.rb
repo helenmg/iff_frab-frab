@@ -1,23 +1,21 @@
-class TicketServer < ActiveRecord::Base
+class TicketServer < ApplicationRecord
   belongs_to :conference
-  validates_presence_of :url, :queue, :user, :password
-  validates_format_of :url, with: /\/\z/
+  validates :url, :queue, :user, :password, presence: true
+  validates :url, format: { with: /\/\z/ }
 
   def adapter
-    type = self.conference.ticket_type.to_sym
+    type = conference.ticket_type.to_sym
 
     if type == :otrs
-      OTRSTicketServerAdapter.new(self)
+      TicketServerAdapter::OTRSAdapter.new(self)
     elsif type == :redmine
-      RedmineTicketServerAdapter.new(self)
+      TicketServerAdapter::RedmineAdapter.new(self)
     else
-      RTTicketServerAdapter.new(self)
+      TicketServerAdapter::RTAdapter.new(self)
     end
   end
 
-  def get_ticket_view_url(remote_id)
-    adapter.get_ticket_view_url(remote_id)
-  end
+  delegate :get_ticket_view_url, to: :adapter
 
   def create_remote_ticket(args = {})
     adapter.create_remote_ticket(args)
@@ -34,5 +32,4 @@ class TicketServer < ActiveRecord::Base
   def add_correspondence(remote_id, subject, body, recipient = nil)
     adapter.add_correspondence(remote_id, subject, body, recipient)
   end
-
 end

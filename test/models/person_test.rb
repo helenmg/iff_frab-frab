@@ -23,8 +23,8 @@ class PersonTest < ActiveSupport::TestCase
   end
 
   test '#newer_than?' do
-    old_person = create(:person)
-    new_person = create(:person)
+    old_person = create(:person, updated_at: Time.now.ago(2.hours))
+    new_person = create(:person, updated_at: Time.now.ago(1.hour))
     refute old_person.newer_than?(new_person)
     assert new_person.newer_than?(old_person)
   end
@@ -41,7 +41,7 @@ class PersonTest < ActiveSupport::TestCase
     create(:event_person, event: event2, person: person, event_role: :speaker, role_state: 'attending')
     create(:event_person, event: event3, person: person, event_role: :submitter)
     create(:event_person, event: other_event, person: person, event_role: :speaker)
-    assert_equal 'idea, attending', person.role_state(conference)
+    assert_equal 'attending, idea', person.role_state(conference)
     assert_equal '', person.role_state(other_conference)
   end
 
@@ -55,6 +55,18 @@ class PersonTest < ActiveSupport::TestCase
     person.set_role_state(conference, :attending)
     assert_equal 'attending', event_person1.reload.role_state
     assert_nil event_person2.reload.role_state
+  end
+
+  test '#default_avatar_url' do
+    person_without_gravatar = build(:person, use_gravatar: false)
+
+    assert_equal 'person_small.png', person_without_gravatar.default_avatar_url
+
+    person_with_gravatar = build(:person, email: 'abc@xyz.org', use_gravatar: true)
+    email_md5 = Digest::MD5.hexdigest('abc@xyz.org')
+    gravatar = "https://www.gravatar.com/avatar/#{email_md5}?size=32&dd=mm"
+
+    assert_equal gravatar, person_with_gravatar.default_avatar_url
   end
 
   test 'feedback average gets calculated correctly' do
@@ -126,6 +138,7 @@ class PersonTest < ActiveSupport::TestCase
     assert_equal 'orga', person2.user.conference_users.find_by(conference_id: conference1.id).role
 
     # last updated person is person3, so it should be kept
+    person2.update_column(:updated_at, Time.now.ago(1.year))
     merged_person = person2.merge_with person3, keep_last_updated: true
 
     assert_equal 1, User.count

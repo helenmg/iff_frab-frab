@@ -6,9 +6,9 @@ class PentabarfImportHelper
     'image/jpeg' => 'jpg',
     'image/png' => 'png',
     'image/gif' => 'gif'
-  }
+  }.freeze
 
-  DUMMY_MAIL = 'root@localhost.localdomain'
+  DUMMY_MAIL = 'root@localhost.localdomain'.freeze
 
   # pentabarf roles are just different
   ROLE_MAPPING = {
@@ -17,19 +17,19 @@ class PentabarfImportHelper
     'comittee' => 'coordinator',
     'admin' => 'orga',
     'developer' => 'admin'
-  }
+  }.freeze
 
   EVENT_STATE_MAPPING = {
     'undecided' => 'unconfirmed',
     'rejected' => 'rejected',
     'accepted' => 'confirmed'
-  }
+  }.freeze
 
   # as in User
   EMAIL_REGEXP = /\A[^@]+@([^@\.]+\.)+[^@\.]+\z/
 
   class Pentabarf < ActiveRecord::Base
-    self.establish_connection(:pentabarf)
+    establish_connection(:pentabarf)
   end
 
   def initialize
@@ -80,7 +80,7 @@ class PentabarfImportHelper
         hour = conference['day_change'].gsub(/:.*/, '').to_i
 
         start_date = day.to_datetime.change(hour: hour, minute: 0)
-        end_date = day.since(1.days).to_datetime.change(hour: hour - 1, minute: 59)
+        end_date = day.since(1.day).to_datetime.change(hour: hour - 1, minute: 59)
         tmp = Day.new(conference: new_conference,
                       start_date: Time.zone.local_to_utc(start_date),
                       end_date: Time.zone.local_to_utc(end_date))
@@ -90,7 +90,7 @@ class PentabarfImportHelper
       # create a dummy cfp for this conference
       cfp = CallForParticipation.new
       cfp.conference = new_conference
-      cfp.start_date = fake_days.first.to_datetime.ago(3.month)
+      cfp.start_date = fake_days.first.to_datetime.ago(3.months)
       cfp.end_date = fake_days.first.to_datetime.ago(1.month)
       cfp.created_at = cfp.start_date
       cfp.updated_at = cfp.end_date
@@ -196,7 +196,7 @@ class PentabarfImportHelper
       # Stupid edge case, where validation fails.
       account['email'].sub!(/@localhost$/, '@localhost.localdomain')
       # skip if email is still not valid
-      unless account['email'] =~ EMAIL_REGEXP
+      unless account['email'].match?(EMAIL_REGEXP)
         puts "!!! invalid email #{account['email']} - pentabarf person_id #{account['person_id']}"
         next
       end
@@ -227,8 +227,6 @@ class PentabarfImportHelper
         )
         user.confirmed_at = Time.now
         user.role = role ? ROLE_MAPPING[role] : 'submitter'
-        user.pentabarf_salt = account['salt']
-        user.pentabarf_password = account['password']
         user.save!
         Person.find(mappings(:people)[account['person_id']]).update_attributes!(user_id: user.id)
       end
@@ -254,22 +252,20 @@ class PentabarfImportHelper
       links = @barf.select_all("SELECT l.title, l.url FROM conference_person as p LEFT OUTER JOIN conference_person_link as l ON p.conference_person_id = l.conference_person_id WHERE p.person_id = #{orig_id}")
       # puts "[ ] importing #{links.count} links from people" if DEBUG
       links.each do |link|
-        if link['title'] and link['url']
-          person = Person.find(new_id)
-          Link.create(title: truncate_string(link['title']),
-                      url: truncate_string(link['url']), linkable: person)
-        end
+        next unless link['title'] and link['url']
+        person = Person.find(new_id)
+        Link.create(title: truncate_string(link['title']),
+                    url: truncate_string(link['url']), linkable: person)
       end
     end
     mappings(:events).each do |orig_id, new_id|
       links = @barf.select_all("SELECT title, url FROM event_link WHERE event_id = #{orig_id}")
       # puts "[ ] importing #{links.count} links from events" if DEBUG
       links.each do |link|
-        if link['title'] and link['url']
-          event = Event.find(new_id)
-          Link.create(title: truncate_string(link['title']),
-                      url: truncate_string(link['url']), linkable: event)
-        end
+        next unless link['title'] and link['url']
+        event = Event.find(new_id)
+        Link.create(title: truncate_string(link['title']),
+                    url: truncate_string(link['url']), linkable: event)
       end
     end
   end
@@ -325,11 +321,11 @@ class PentabarfImportHelper
     puts "[ ] importing #{event_ratings.count} event ratings" if DEBUG
     event_ratings.each do |rating|
       key = rating['person_id'] + '##' + rating['event_id']
-      if rating_rankings_n.key?(key)
-        score = rating_rankings[key] / rating_rankings_n[key]
-      else
-        score = 0
-      end
+      score = if rating_rankings_n.key?(key)
+                rating_rankings[key] / rating_rankings_n[key]
+              else
+                0
+              end
       EventRating.create!(
         event_id: mappings(:events)[rating['event_id']],
         person_id: mappings(:people)[rating['person_id']],
@@ -402,6 +398,7 @@ class PentabarfImportHelper
 
   def import_event_people
     EventPerson.skip_callback(:save, :after, :update_speaker_count)
+    EventPerson.skip_callback(:save, :after, :update_event_conflicts)
     event_people = @barf.select_all('SELECT * FROM event_person')
     puts "[ ] importing #{event_people.count} event people" if DEBUG
     event_people.each do |event_person|
@@ -435,26 +432,26 @@ class PentabarfImportHelper
   def guess_public_name(person)
     # by order of preference
     if person['nickname']
-      return person['nickname']
+      person['nickname']
     elsif person['public_name']
-      return person['public_name']
+      person['public_name']
     elsif person['first_name'] and person['last_name']
-      return "#{person['first_name']} #{person['last_name']}"
+      "#{person['first_name']} #{person['last_name']}"
     elsif person['first_name']
-      return person['first_name']
+      person['first_name']
     elsif person['last_name']
-      return person['last_name']
+      person['last_name']
     else
-      return 'unknown'
+      'unknown'
     end
   end
 
   def guess_gender(person)
     # pentabarf mostly encodes gender as a boolean
     if person['gender'].nil?
-      return
+      nil
     else
-      return penta_bool(person['gender']) ? 'male' : 'female'
+      penta_bool(person['gender']) ? 'male' : 'female'
     end
   end
 
@@ -474,10 +471,10 @@ class PentabarfImportHelper
     t = Time.parse(day + ' ' + interval).in_time_zone
     if t.dst?
       # t + 2.hour
-      t + 4.hour
+      t + 4.hours
     else
       # t + 3.hour
-      t + 4.hour
+      t + 4.hours
     end
   end
 

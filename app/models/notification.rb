@@ -1,4 +1,4 @@
-class Notification < ActiveRecord::Base
+class Notification < ApplicationRecord
   belongs_to :conference
 
   validates :locale, presence: true
@@ -7,27 +7,27 @@ class Notification < ActiveRecord::Base
   validates :accept_subject, presence: true
   validates :accept_body,    presence: true
   validates :schedule_subject, presence: true
-  validates :schedule_body,  presence: true
+  validates :schedule_body, presence: true
   validate :uniq_locale
   # TODO
   # validate :locale_is_valid
 
-  scope :with_locale, ->(code) { where(self.arel_table[:locale].eq(code)) }
+  scope :with_locale, ->(code) { where(arel_table[:locale].eq(code)) }
 
   VARIABLES = {
-    'conference'  => 'Conference name',
-    'public_name' => 'Speaker public name',
-    'forename'    => 'Speaker forename',
-    'surname'     => 'Speaker surname',
-    'event'       => 'Event title',
-    'link'        => 'Confirmation link',
-    'date'        => 'Date of presentation',
-    'time'        => 'Time of presentation',
-    'room'        => 'Room of presentation'
-  }
+    'conference'  => I18n.t('conferences_module.variables.conference'),
+    'public_name' => I18n.t('conferences_module.variables.public_name'),
+    'forename'    => I18n.t('conferences_module.variables.forename'),
+    'surname'     => I18n.t('conferences_module.variables.surname'),
+    'event'       => I18n.t('conferences_module.variables.event'),
+    'link'        => I18n.t('conferences_module.variables.link'),
+    'date'        => I18n.t('conferences_module.variables.date'),
+    'time'        => I18n.t('conferences_module.variables.time'),
+    'room'        => I18n.t('conferences_module.variables.room')
+  }.freeze
 
   def default_text=(locale = self.locale)
-    return if locale.nil?
+    return if locale.blank?
     I18n.locale = locale
 
     self.reject_subject = I18n.t('emails.event_rejection.subject')
@@ -54,16 +54,15 @@ BODY
 #{I18n.t('emails.event_schedule.info')}
 #{I18n.t('emails.event_schedule.goodbye')}
 BODY
-
   end
 
   private
 
   def uniq_locale
-    return if self.conference.nil?
-    self.conference.notifications.each { |n|
-      if n.id != self.id and n.locale == self.locale
-        self.errors.add(:locale, "#{n.locale} already added to this cfp")
+    return if conference.nil?
+    conference.notifications.each { |n|
+      if n.id != id and n.locale == locale
+        errors.add(:locale, "#{n.locale} already added to this cfp")
       end
     }
   end

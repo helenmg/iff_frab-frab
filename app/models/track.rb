@@ -1,13 +1,15 @@
-class Track < ActiveRecord::Base
+class Track < ApplicationRecord
   belongs_to :conference
+  has_many :events
 
   default_scope -> { order(:name) }
 
   has_paper_trail meta: { associated_id: :conference_id, associated_type: 'Conference' }
 
   validates :color, format: { with: /\A[a-zA-Z0-9]*\z/ }
+  validates :name, presence: true
 
   def to_s
-    "#{model_name.human}: #{self.name}"
+    "#{model_name.human}: #{name}"
   end
 end

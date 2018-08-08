@@ -1,21 +1,16 @@
 json.id event.id
 json.guid event.guid
 json.title event.title
-json.logo event.logo_path
+json.subtitle event.subtitle
+json.description event.description
+json.logo event.logo_path(:original)
 json.type event.event_type
 json.do_not_record event.do_not_record
-if event.start_time and event.room
-  json.start_time event.start_time
-  json.end_time event.end_time
-  json.room do
-    json.name event.room.name
-    json.id event.room.id
-  end
-end
+json.track event.track&.name
 json.abstract event.abstract
 json.speakers event.speakers do |person|
   json.id person.id
-  json.image person.avatar_path
+  json.image person.avatar_path(:original)
   json.full_public_name person.public_name
   json.abstract person.abstract
   json.description person.description
