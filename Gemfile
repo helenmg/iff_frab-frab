@@ -1,4 +1,12 @@
 source 'https://rubygems.org'
+git_source(:github) do |repo_name|
+  repo_name = "#{repo_name}/#{repo_name}" unless repo_name.include?("/")
+  "https://github.com/#{repo_name}.git"
+end
+
+install_if -> { RbConfig::CONFIG['target_os'] =~ /(?i-mx:bsd|dragonfly)/ } do
+  gem 'rb-kqueue', ">= 0.2", platforms: :ruby
+end
 
 if ENV['CUSTOM_RUBY_VERSION']
   ruby ENV['CUSTOM_RUBY_VERSION'] # i.e.: '2.3'
@@ -13,7 +21,7 @@ gem 'uglifier', '>= 1.3.0'
 # Use CoffeeScript for .coffee assets and views
 gem 'coffee-rails', '~> 4.1.0'
 gem 'mysql2', group: :mysql
-gem 'pg', group: :postgresql
+gem 'pg', '~> 0.15', group: :postgresql
 gem 'sqlite3', group: :sqlite3
 
 # Use Puma as the app server

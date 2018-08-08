@@ -5,6 +5,10 @@ require 'minitest/pride'
 require 'database_cleaner'
 require 'sucker_punch/testing/inline'
 
+require 'shoulda'
+require 'factory_girl'
+require 'shoulda-matchers'
+
 class ActiveSupport::TestCase
   ActiveRecord::Migration.check_pending!
   include FactoryGirl::Syntax::Methods

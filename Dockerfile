@@ -7,11 +7,11 @@ WORKDIR $APP
 
 COPY Gemfile Gemfile.lock $APP/
 RUN gem install bundler --conservative
-RUN bundle install --without mysql postgresql --jobs 10
+RUN bundle install --without mysql sqlite3 --jobs 10
 
 COPY . $APP
 
 COPY config/database.yml.template $APP/config/database.yml
 COPY config/secrets.yml.template $APP/config/secrets.yml
 
-RUN bin/rake db:setup
+CMD ["/app/docker-cmd.sh"]

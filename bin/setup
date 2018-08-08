@@ -10,7 +10,7 @@ Dir.chdir APP_ROOT do
 
   puts '== Installing dependencies =='
   system 'gem install bundler --conservative'
-  system 'bundle check || bundle install --without mysql postgresql'
+  system 'bundle check || bundle install --without mysql sqlite3'
 
   puts "\n== Copying sample files =="
   unless File.exist?('config/database.yml')
@@ -21,7 +21,7 @@ Dir.chdir APP_ROOT do
   end
 
   puts "\n== Preparing database =="
-  system 'bin/rake db:setup'
+  system 'bundle exec rake db:setup'
 
   puts "\n== Removing old logs and tempfiles =="
   system 'rm -f log/*'

@@ -2,7 +2,6 @@ version: '3'
 services:
   web:
     build: .
-    command: bash -c "rm -rf tmp/pids/server.pid && bundle exec rails s -p 3000 -b '0.0.0.0'"
     volumes:
       - ./Gemfile:/app/Gemfile
       - ./Gemfile.lock:/app/Gemfile.lock
@@ -13,5 +12,16 @@ services:
       - ./db/seeds.rb:/app/db/seeds.rb
       - ./lib:/app/lib
       - ./test:/app/test
+    environment:
+      DB: postgresql
     ports:
       - "3000:3000"
+    depends_on:
+      - db
+
+  db:
+    image: postgres:10.4-alpine
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: password
+      POSTGRES_USER: iff
